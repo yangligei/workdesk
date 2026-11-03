@@ -1,0 +1,25 @@
+# Build and tooling
+.build/
+build/
+DerivedData/
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+.venv/
+venv/
+__pycache__/
+# Private runtime data
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+runtime/
+recordings/
+secrets/
+*.exe
