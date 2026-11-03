@@ -5,6 +5,7 @@ import WorkdeskCore
 @MainActor final class Model: ObservableObject {
  @Published var projects: [Project] = []
  @Published var tasks: [WorkTask] = []
+ @Published var projectTasks: [String: [WorkTask]] = [:]
  @Published var selection: String?
  @Published var error: String?
  @Published var audit: [AuditEntry] = []
@@ -35,7 +36,10 @@ import WorkdeskCore
    guard let store else { return }
    projects = try await store.projects()
    if !projects.contains(where: { $0.id == selection }) { selection = projects.first?.id }
-   tasks = try await selection.asyncTasks(store)
+   var grouped: [String: [WorkTask]] = [:]
+   for project in projects { grouped[project.id] = try await store.tasks(project.id) }
+   projectTasks = grouped
+   tasks = selection.flatMap { grouped[$0] } ?? []
    audit = try await store.audit(); bindings = try await store.bindings()
    meetings = try await selection.mapAsyncMeetings(store)
    if let root { try await store.exportProjects(to: root) }
@@ -69,19 +73,14 @@ private extension Optional where Wrapped == String {
 
 struct TaskBoard: View {
  @ObservedObject var model: Model
- @State private var projectTitle = ""
  @State private var taskTitle = ""
  @State private var confirmDelete = false
  var body: some View {
   VStack(alignment: .leading, spacing: 14) {
    HStack {
-    Text("工作进度台").font(.title2.bold())
+    Text("项目待办").font(.system(size: 24, weight: .semibold))
     Spacer()
     Button("刷新") { model.perform { await model.reload() } }
-   }
-   HStack {
-    TextField("新项目名称", text: $projectTitle).onSubmit(addProject)
-    Button("添加项目", action: addProject).disabled(projectTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
    }
    Picker("项目", selection: $model.selection) {
     Text("请选择").tag(String?.none)
@@ -94,13 +93,18 @@ struct TaskBoard: View {
     TextField("下一步要做什么", text: $taskTitle).onSubmit(addTask)
     Button("添加任务", action: addTask).disabled(model.selection == nil || taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
    }
-   List(model.tasks) { task in
-    HStack {
+   ScrollView {
+    LazyVStack(spacing: 0) {
+    ForEach(model.tasks) { task in
+    HStack(spacing: 14) {
      TaskTitleEditor(model: model, task: task).id(task.id + String(task.version))
      Picker("状态", selection: Binding(get: { task.status }, set: { model.update(task, status: $0) })) {
       ForEach(["待办", "进行中", "阻塞", "完成"], id: \.self) { Text($0) }
      }.labelsHidden().frame(width: 110)
      Button { model.deleteTask(task) } label: { Image(systemName: "trash") }.help("删除任务")
+    }.padding(.vertical, 18)
+    Divider()
+    }
     }
    }.overlay { if model.tasks.isEmpty { Text("暂无任务").foregroundStyle(.secondary) } }
    HStack {
@@ -108,11 +112,10 @@ struct TaskBoard: View {
     Spacer()
     Button("删除项目…", role: .destructive) { confirmDelete = true }.disabled(model.selection == nil)
    }
-  }.padding(18).frame(minWidth: 440, minHeight: 340)
+  }.padding(34).frame(minWidth: 440, minHeight: 340)
   .alert("操作失败", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("确定") { model.error = nil } } message: { Text(model.error ?? "") }
   .confirmationDialog("删除项目及其全部任务？", isPresented: $confirmDelete) { Button("删除项目", role: .destructive) { model.deleteProject() } }
  }
- private func addProject() { model.addProject(projectTitle); projectTitle = "" }
  private func addTask() { guard model.selection != nil else { return }; model.addTask(taskTitle); taskTitle = "" }
 }
 
@@ -121,10 +124,11 @@ struct TaskBoard: View {
  private var panel: NSPanel?
  func show(_ model: Model) {
   if panel == nil {
-   let window = NSPanel(contentRect: NSRect(x: 160, y: 240, width: 480, height: 400), styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
+   let window = NSPanel(contentRect: NSRect(x: 160, y: 240, width: 360, height: 500), styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
    window.title = "Workdesk · 置顶窗"; window.level = .floating
    window.isReleasedWhenClosed = false
-   window.contentView = NSHostingView(rootView: Board(model: model)); panel = window
+   window.contentMinSize = NSSize(width: 320, height: 360)
+   window.contentView = NSHostingView(rootView: FocusPanel(model: model)); panel = window
   }
   panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
  }
@@ -133,7 +137,7 @@ struct TaskBoard: View {
  @StateObject private var model = Model()
  @Environment(\.openWindow) private var openWindow
  var body: some Scene {
-  Window("Workdesk · 工作进度台", id: "main") { Board(model: model) }.defaultSize(width: 640, height: 480)
+  Window("Workdesk · 工作进度台", id: "main") { Board(model: model) }.defaultSize(width: 1080, height: 700)
   MenuBarExtra("工作进度台", systemImage: "checklist") {
    Text("项目 \(model.projects.count) · 当前任务 \(model.tasks.count)")
    Button("打开管理窗口") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
