@@ -11,7 +11,6 @@ import WorkdeskCore
  @Published var audit: [AuditEntry] = []
  @Published var bindings: [SourceBinding] = []
  @Published var meetings: [Meeting] = []
- let notifications = DeadlineNotifications()
  var store: Store?
  private var root: URL?
  private var inbox: EventInbox?
@@ -44,17 +43,8 @@ import WorkdeskCore
    audit = try await store.audit(); bindings = try await store.bindings()
    meetings = try await selection.mapAsyncMeetings(store)
    if let root { try await store.exportProjects(to: root) }
-   await notifications.reconcile(projects, tasks: projectTasks)
   } catch { self.error = error.localizedDescription }
  }
- func addProject(_ title: String) { perform {
-  guard let store = self.store else { return }
-  let project = try await store.createProject(title); self.selection = project.id; await self.reload()
- } }
- func addTask(_ title: String) { perform {
-  guard let store = self.store, let id = self.selection else { return }
-  _ = try await store.createTask(id, title: title); await self.reload()
- } }
  func update(_ task: WorkTask, status: String) { perform {
   try await self.store?.updateTask(task.id, title: task.title, status: status, expected: task.version); await self.reload()
  } }
@@ -75,7 +65,6 @@ private extension Optional where Wrapped == String {
 
 struct TaskBoard: View {
  @ObservedObject var model: Model
- @State private var taskTitle = ""
  @State private var confirmDelete = false
  var body: some View {
   VStack(alignment: .leading, spacing: 14) {
@@ -91,10 +80,7 @@ struct TaskBoard: View {
    if let project = model.projects.first(where: { $0.id == model.selection }) {
     ProjectEditor(model: model, project: project).id(project.id + String(project.version))
    }
-   HStack {
-    TextField("下一步要做什么", text: $taskTitle).onSubmit(addTask)
-    Button("添加任务", action: addTask).disabled(model.selection == nil || taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-   }
+   AgentStatus(model: model)
    ScrollView {
     LazyVStack(spacing: 0) {
     ForEach(model.tasks) { task in
@@ -118,7 +104,6 @@ struct TaskBoard: View {
   .alert("操作失败", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("确定") { model.error = nil } } message: { Text(model.error ?? "") }
   .confirmationDialog("删除项目及其全部任务？", isPresented: $confirmDelete) { Button("删除项目", role: .destructive) { model.deleteProject() } }
  }
- private func addTask() { guard model.selection != nil else { return }; model.addTask(taskTitle); taskTitle = "" }
 }
 
 @MainActor final class FloatingWindow {

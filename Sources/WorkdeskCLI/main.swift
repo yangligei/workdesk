@@ -10,10 +10,16 @@ import WorkdeskCore
    switch command {
    case "enroll":
     let flags = try Self.flags(Array(args.dropFirst()))
-    guard let name = flags["name"], let project = flags["project"], let alias = flags["alias"], let path = flags["token-file"] else { throw StoreError.database("enroll --name NAME --project PROJECT_ID --alias ALIAS --token-file PATH") }
+    guard let name = flags["name"], let path = flags["token-file"] else { throw StoreError.database("enroll --name NAME --token-file PATH [--project PROJECT_ID --alias ALIAS]") }
     let store = try Store(root: root)
-    let credential = try await store.registerSource(name, project: project, alias: alias, tokenFile: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
+    let credential = try await store.registerSource(name, project: flags["project"] ?? "", alias: flags["alias"] ?? "", tokenFile: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
     print("已登记来源：\(credential.name)\n凭据文件：\(credential.tokenFile.path)（权限 600，请勿提交或打印）\n绑定：\(credential.alias) → \(credential.project)")
+   case "grant-create":
+    let flags = try Self.flags(Array(args.dropFirst()))
+    guard let name = flags["name"], let allow = flags["allow"], ["yes", "no"].contains(allow) else { throw StoreError.database("grant-create --name NAME --allow yes|no（仅本机显式授权）") }
+    let store = try Store(root: root)
+    try await store.setProjectCreationPermission(source: name, allowed: allow == "yes")
+    print("项目创建许可已设为：\(allow)")
    case "report":
     let flags = try Self.flags(Array(args.dropFirst()))
     guard let source = flags["source"], let alias = flags["alias"], let text = flags["text"] else { throw StoreError.database("report --source NAME --alias ALIAS --text TEXT [--type progress] [--token-file PATH]") }
@@ -21,6 +27,9 @@ import WorkdeskCore
     guard !path.isEmpty else { throw StoreError.database("缺少 --token-file 或 WORKDESK_TOKEN_FILE") }
     let token = String(decoding: try InboxFiles.read(URL(fileURLWithPath: (path as NSString).expandingTildeInPath), limit: 4096), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     var event = ProgressEvent(sourceID: source, projectID: alias, type: flags["type"] ?? "progress", text: text)
+    if let id = flags["event-id"] { event.eventID = id }
+    event.taskID = flags["task-id"]
+    if let version = flags["expected-version"] { guard let value = Int(version) else { throw StoreError.database("版本必须是整数") }; event.expectedVersion = value }
     try EventSigning.sign(&event, privateKey: token)
     print(try EventInbox.submit(event, root: root))
    case "submit":
@@ -40,7 +49,7 @@ import WorkdeskCore
    }
   } catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(1) }
  }
- static let usage = "WorkdeskCLI enroll --name NAME --project ID --alias ALIAS --token-file PATH | report --source NAME --alias ALIAS --text TEXT --token-file PATH | submit SIGNED.json | receipt FILE.json | projects | drain"
+ static let usage = "WorkdeskCLI enroll --name NAME --token-file PATH [--project ID --alias ALIAS] | grant-create --name NAME --allow yes|no | report --source NAME --alias ALIAS --text TEXT --token-file PATH | submit SIGNED.json | receipt FILE.json | projects | drain"
  static func flags(_ args: [String]) throws -> [String: String] {
   var result: [String: String] = [:]; var index = 0
   while index < args.count {

@@ -12,10 +12,11 @@ public struct SourceCredential: Identifiable, Sendable {
 public extension Store {
  /// Registration creates an Ed25519 keypair. Only the public key is stored in SQLite;
  /// the private key is written once to a 0600 file outside the database.
- func registerSource(_ rawName: String, project: String, alias: String, tokenFile: URL) throws -> SourceCredential {
-  let name = try title(rawName), aliasValue = try title(alias)
+ func registerSource(_ rawName: String, project: String = "", alias: String = "", tokenFile: URL) throws -> SourceCredential {
+  let name = try title(rawName), aliasValue = alias.isEmpty ? "" : try title(alias)
   guard name.utf8.count <= 64, name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) else { throw StoreError.database("来源名只允许字母、数字、- 和 _") }
-  guard try projects().contains(where: { $0.id == project }) else { throw StoreError.missing }
+  guard project.isEmpty == aliasValue.isEmpty else { throw StoreError.database("项目与别名须同时指定") }
+  if !project.isEmpty { guard try projects().contains(where: { $0.id == project }) else { throw StoreError.missing } }
   try integrationSchema()
   let key = Curve25519.Signing.PrivateKey()
   let privateToken = key.rawRepresentation.base64EncodedString()
@@ -33,11 +34,16 @@ public extension Store {
    _ = try query("BEGIN IMMEDIATE")
    do {
     _ = try query("INSERT INTO sources(source,token_hash,created) VALUES(?,?,?) ON CONFLICT(source) DO UPDATE SET token_hash=excluded.token_hash", [name, publicKey, ISO8601DateFormatter().string(from: Date())])
-    try bind(source: name, alias: aliasValue, project: project)
+    if !project.isEmpty { try bind(source: name, alias: aliasValue, project: project) }
     _ = try query("COMMIT")
    } catch { _ = try? query("ROLLBACK"); throw error }
   } catch { try? FileManager.default.removeItem(at: tokenFile); throw error }
   return SourceCredential(name: name, tokenFile: tokenFile, alias: aliasValue, project: project)
+ }
+ func setProjectCreationPermission(source: String, allowed: Bool) throws {
+  try integrationSchema()
+  guard !(try query("SELECT source FROM sources WHERE source=?", [source])).isEmpty else { throw StoreError.missing }
+  _ = try query("INSERT INTO source_capabilities(source,create_projects) VALUES(?,?) ON CONFLICT(source) DO UPDATE SET create_projects=excluded.create_projects", [source, allowed ? "1" : "0"])
  }
  func verify(source: String, message: Data, signature: String) throws -> Bool {
   try integrationSchema()

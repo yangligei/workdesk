@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory(prefix="workdesk-launch-", dir=os.environ["TMPD
     root = Path(temporary)
     # A legacy-schema fixture also exercises startup migrations.
     with sqlite3.connect(root / "workdesk.sqlite") as db:
-        db.executescript("CREATE TABLE projects(id TEXT PRIMARY KEY,title TEXT NOT NULL); INSERT INTO projects VALUES('fixture','隔离演示');")
+        db.executescript("CREATE TABLE projects(id TEXT PRIMARY KEY,title TEXT NOT NULL); INSERT INTO projects VALUES('fixture','隔离演示'); ALTER TABLE projects ADD COLUMN deadline REAL; ALTER TABLE projects ADD COLUMN timezone TEXT DEFAULT 'UTC'; ALTER TABLE projects ADD COLUMN reminders TEXT DEFAULT '[24]'; UPDATE projects SET deadline=1234567890,timezone='Asia/Shanghai',reminders='[6,24]';")
     env = dict(os.environ, WORKDESK_DATA_DIR=str(root), WORKDESK_DISABLE_NOTIFICATIONS="1")
     def launch():
         return subprocess.Popen([str(app)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -48,6 +48,7 @@ with tempfile.TemporaryDirectory(prefix="workdesk-launch-", dir=os.environ["TMPD
         assert snapshot[0]["title"] == "隔离演示"
         with sqlite3.connect(root / "workdesk.sqlite") as db:
             assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 2
+            assert db.execute("SELECT deadline,timezone,reminders FROM projects").fetchone() == (1234567890.0, "Asia/Shanghai", "[6,24]")
         assert process.poll() is None
         print("PASS: bundled app legacy migration, startup sweep, live directory event, CLI receipts, project snapshot")
     finally:

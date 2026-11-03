@@ -42,15 +42,4 @@ public extension Store {
   try meetingSchema()
   return try query("SELECT id,title,evidence,line,task FROM drafts WHERE meeting=? ORDER BY line", [meeting]).map { MeetingDraft(id: $0[0], title: $0[1], evidence: $0[2], line: Int($0[3])!, taskID: $0[4]) }
  }
- func confirmDraft(_ id: String, title text: String) throws {
-  try meetingSchema(); _ = try query("BEGIN IMMEDIATE")
-  do {
-   guard let row = try query("SELECT meetings.project,drafts.task FROM drafts JOIN meetings ON drafts.meeting=meetings.id WHERE drafts.id=?", [id]).first else { throw StoreError.missing }
-   if row[1].isEmpty {
-    let task = try createTask(row[0], title: text)
-    _ = try query("UPDATE drafts SET task=?,title=? WHERE id=?", [task.id,task.title,id])
-   }
-   _ = try query("COMMIT")
-  } catch { _ = try? query("ROLLBACK"); throw error }
- }
 }

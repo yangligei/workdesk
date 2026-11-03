@@ -20,7 +20,7 @@ enroll 生成 Ed25519 私钥，使用 O_EXCL/O_NOFOLLOW 创建 0600 文件，拒
 
 JSON camelCase 字段：schemaVersion=1、eventID、sourceID、projectID（绑定别名）、taskID（可选）、occurredAt（ISO8601）、type、text、expectedVersion（可选）、signature（Base64）。Ed25519 签名内容按如下顺序：schemaVersion、sourceID、projectID、taskID 或空串、occurredAt、type、text、expectedVersion 或空串、eventID。每个字段编码为 UTF-8 字节长度、冒号、字段值，字段之间以竖线连接。CLI report 负责签名；submit 接收已签名 JSON。
 
-先验证签名和当前来源/别名授权，再查询 sourceID+eventID 去重，未签名重放不能取得 accepted。有效重复返回首次回执；必须复用同一事件与签名重试。report 每次生成新 eventID。相同 ID 的再次签名内容仍按首次结果处理；不要跨逻辑操作重用 ID。task.rename 只可修改映射项目内的任务，并检查 expectedVersion。progress 仅记录；task.create 创建待办；任务完成必须本地确认。拒绝未授权项目、外部完成及不支持类型。
+先验证签名和当前来源/别名授权，再查询 sourceID+eventID 去重，未签名重放不能取得 accepted。有效重复返回首次回执；必须复用同一事件与签名重试。report 默认生成新 eventID，可用 --event-id 指定重试 ID。相同 ID 的再次签名内容仍按首次结果处理；不要跨逻辑操作重用 ID。task.rename 只可修改映射项目内的任务，并检查 expectedVersion。progress 仅记录；task.create 创建待办；任务完成必须本地确认。拒绝未授权项目、外部完成及不支持类型。
 
 ## 文件与边界
 
@@ -28,4 +28,29 @@ JSON camelCase 字段：schemaVersion=1、eventID、sourceID、projectID（绑�
 
 同一 macOS 用户仍可读取文件和修改数据库，不是远程、多租户或同用户恶意进程隔离。只对可信本机调用方提供 CLI。projects / projects.json 包含全部本地项目及截止设置，不是按来源过滤的远程查询，禁止直接转发 QQ。审计存原始事件文本；调用方不要把密钥放入文字。UI 仅展示最近 200 条，底层暂无自动清理。手动操作暂无统一审计。
 
-会议文字仍仅按显式待办标记生成带行号/时间戳的草稿，逐条人工确认，重复确认幂等；无音频转写或模型。
+会议文字仅按显式待办标记生成带行号/时间戳的草稿；正式任务由授权智能体发送 `draft.confirm --task-id DRAFT_ID` 创建，检查草稿所属项目，重复确认幂等；无音频转写或模型。
+
+## 从空工作台接入
+
+本机用户执行登记和独立授权（不输出私钥；默认没有创建许可）：
+
+```sh
+"$CLI" enroll --name local-agent --token-file "$TMPDIR/workdesk-agent.key"
+"$CLI" grant-create --name local-agent --allow yes
+```
+
+随后由智能体发送命令，使用同一数据目录与凭据文件：
+
+```sh
+"$CLI" report --source local-agent --alias release --type project.create --text '发布项目' --event-id project-001 --token-file "$TMPDIR/workdesk-agent.key"
+# 运行中的应用自动处理；应用关闭时本机运行 drain。
+"$CLI" drain
+"$CLI" receipt 返回的文件名.json
+# accepted.detail 是项目 ID，release 别名已在同一事务绑定。
+"$CLI" report --source local-agent --alias release --type task.create --text '准备发布说明' --event-id task-001 --token-file "$TMPDIR/workdesk-agent.key"
+"$CLI" report --source local-agent --alias release --type draft.confirm --task-id DRAFT_ID --text '草稿任务标题' --event-id draft-001 --token-file "$TMPDIR/workdesk-agent.key"
+```
+
+创建许可仅允许使用未占用别名创建项目，不允许覆盖已有映射，也不授予其他项目任务权限。相同事件 ID 重试返回原回执，不重复创建。CLI `--event-id` 允许调用方固定重试标识；修改操作使用新 ID。`task.rename` 还需 `--task-id ID --expected-version N`。本机用户可用 `grant-create --name local-agent --allow no` 撤销创建许可，UI 撤销单项目映射。智能体不能通过事件自行授权。CLI 管理命令仅供可信本机用户，不应作为远程代理能力暴露。
+
+界面不再手动创建项目、任务或将草稿变为正式任务。日历、截止编辑和提醒流程已撤回；旧数据库的 deadline/timezone/reminders 数据原样保留，不删除列、记录或降 schema 版本。应用不再安排提醒。真实 Hermes/QQ 未自动接入，调用方必须明确配置上述 CLI 命令。

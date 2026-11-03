@@ -20,7 +20,7 @@ open dist/Workdesk.app
 
 默认数据在 `~/Library/Application Support/Workdesk/workdesk.sqlite`。设置 `WORKDESK_DATA_DIR` 可指定隔离样例目录。关闭窗口后可从菜单栏重新打开；退出菜单结束应用。打包脚本生成本机架构的 Release `.app` 并作 ad-hoc 本地签名，未进行公证。
 
-项目可改名、编辑阶段并设置时区、截止日期和提前提醒。支持 1/6/24/48 小时及自定义小时数；本地 ad-hoc 构建明确降级为应用内提示。使用方法见 [截止与智能体指南](docs/deadlines-and-agents.md)。任务标题回车保存。会议文字用显式待办标记生成可编辑草稿，逐项确认。事件协议与 CLI 用法、可靠性和安全边界见 [事件协议](docs/event-protocol.md)。
+项目和任务由登记并授权的智能体通过签名协议创建；本机保留改名、阶段、状态和删除操作。日历、截止与提醒流程已撤回，旧数据库字段原样保留。会议文字可生成证据草稿，正式任务由授权智能体发送 draft.confirm 创建。接入步骤见 [事件协议](docs/event-protocol.md)。
 
 当前限制：尚未接入真实智能体/QQ、音频转写或模型；无统一手动操作审计；性能预算尚未按规定数据量与 10 分钟流程验收。可运行 `python3 scripts/check-launch.py` 隔离验证真实 app 和 CLI。
 

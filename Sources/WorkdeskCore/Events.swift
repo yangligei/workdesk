@@ -43,6 +43,7 @@ public extension Store {
   try JSONEncoder().encode(projects()).write(to: root.appendingPathComponent("projects.json"), options: .atomic)
  }
  func integrationSchema() throws {
+  _ = try query("CREATE TABLE IF NOT EXISTS source_capabilities(source TEXT PRIMARY KEY,create_projects INTEGER NOT NULL DEFAULT 0)")
   _ = try query("CREATE TABLE IF NOT EXISTS bindings(source TEXT NOT NULL,alias TEXT NOT NULL,project TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,PRIMARY KEY(source,alias))")
   _ = try query("CREATE TABLE IF NOT EXISTS events(source TEXT NOT NULL,id TEXT NOT NULL,project TEXT NOT NULL,occurred TEXT NOT NULL,received TEXT NOT NULL,type TEXT NOT NULL,text TEXT NOT NULL,outcome TEXT NOT NULL,detail TEXT NOT NULL,PRIMARY KEY(source,id))")
  }
@@ -68,7 +69,9 @@ public extension Store {
   }
   _ = try query("BEGIN IMMEDIATE")
   do {
-   guard let mapping = try query("SELECT project FROM bindings WHERE source=? AND alias=?", [event.sourceID, event.projectID]).first?.first else {
+   let mapping = try query("SELECT project FROM bindings WHERE source=? AND alias=?", [event.sourceID, event.projectID]).first?.first
+   let mayCreate = try event.type == "project.create" && (query("SELECT source FROM source_capabilities WHERE source=? AND create_projects=1", [event.sourceID])).count == 1
+   guard mapping != nil || mayCreate else {
     _ = try query("COMMIT")
     return Receipt(eventID: event.eventID, outcome: "rejected", detail: "未授权来源/项目")
    }
@@ -77,8 +80,26 @@ public extension Store {
    }
    var outcome = "rejected", detail = "无效事件或未授权来源/项目"
    if event.schemaVersion == 1, !event.eventID.isEmpty, event.eventID.utf8.count <= 128, event.sourceID.utf8.count <= 128, event.text.utf8.count <= 32000, ISO8601DateFormatter().date(from: event.occurredAt) != nil {
-    let project = mapping
+    let project = mapping ?? ""
     switch event.type {
+    case "project.create":
+     if mayCreate, mapping == nil, !event.projectID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !event.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      let created = try createProject(event.text)
+      try bind(source: event.sourceID, alias: event.projectID, project: created.id)
+      outcome = "accepted"; detail = created.id
+     } else { detail = "项目别名已占用或缺少创建许可" }
+    case "draft.confirm":
+     if let id = event.taskID {
+      try meetingSchema()
+      if let row = try query("SELECT drafts.task FROM drafts JOIN meetings ON drafts.meeting=meetings.id WHERE drafts.id=? AND meetings.project=?", [id,project]).first {
+       if row[0].isEmpty {
+        let task = try createTask(project, title: event.text)
+        _ = try query("UPDATE drafts SET task=?,title=? WHERE id=?", [task.id,task.title,id])
+        detail = task.id
+       } else { detail = row[0] }
+       outcome = "accepted"
+      }
+     }
     case "task.create":
      if !event.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       let task = try createTask(project, title: event.text); outcome = "accepted"; detail = task.id
@@ -94,7 +115,7 @@ public extension Store {
     default: detail = "不支持的类型；任务完成须本地确认"
     }
    }
-   _ = try query("INSERT INTO events(source,id,project,occurred,received,type,text,outcome,detail) VALUES(?,?,?,?,?,?,?,?,?)", [event.sourceID,event.eventID,mapping,event.occurredAt,ISO8601DateFormatter().string(from: Date()),event.type,event.text,outcome,detail])
+   _ = try query("INSERT INTO events(source,id,project,occurred,received,type,text,outcome,detail) VALUES(?,?,?,?,?,?,?,?,?)", [event.sourceID,event.eventID,mapping ?? (outcome == "accepted" ? detail : ""),event.occurredAt,ISO8601DateFormatter().string(from: Date()),event.type,event.text,outcome,detail])
    _ = try query("COMMIT")
    return Receipt(eventID: event.eventID, outcome: outcome, detail: detail)
   } catch { _ = try? query("ROLLBACK"); throw error }

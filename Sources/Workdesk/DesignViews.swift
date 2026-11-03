@@ -34,8 +34,6 @@ struct ProjectOverview: View {
  let openProject: () -> Void
  @State private var query = ""
  @State private var filter = "全部项目"
- @State private var creating = false
- @State private var title = ""
  @FocusState private var searching: Bool
  var projects: [Project] { model.projects.filter { project in
   let status = projectStatus(model.projectTasks[project.id] ?? [])
@@ -46,7 +44,7 @@ struct ProjectOverview: View {
    HStack {
     VStack(alignment: .leading, spacing: 10) { Text("项目总览").font(.system(size: 24, weight: .semibold)); Text("把注意力放在下一步").foregroundStyle(.secondary) }
     Spacer()
-    Button("＋ 新建项目") { creating = true }.buttonStyle(DeskButton(primary: true))
+    AgentStatus(model: model)
    }
    HStack(spacing: 24) {
     ForEach(["全部项目", "未完成", "已完成"], id: \.self) { value in
@@ -68,7 +66,6 @@ struct ProjectOverview: View {
          Text(project.title).font(.system(size: 17, weight: .semibold)).foregroundStyle(Desk.ink)
          Text((project.stage.isEmpty ? "阶段未设置" : project.stage) + " → 下一步：" + (tasks.first { $0.status != "完成" }?.title ?? "暂无待办"))
           .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
-         DeadlineLabel(project: project, tasks: tasks)
         }
         Spacer(minLength: 12)
         StatusPill(text: projectStatus(tasks))
@@ -79,20 +76,12 @@ struct ProjectOverview: View {
       Divider()
      }
      if projects.isEmpty {
-      VStack(alignment: .leading, spacing: 12) { Text(model.projects.isEmpty ? "从一个项目开始" : "没有匹配的项目").font(.headline); Text(model.projects.isEmpty ? "创建项目后，记录当前阶段和下一步。" : "调整筛选或搜索内容。").foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 40)
+      VStack(alignment: .leading, spacing: 12) { Text(model.projects.isEmpty ? "从一个项目开始" : "没有匹配的项目").font(.headline); Text(model.projects.isEmpty ? "请在设置与接入中登记智能体，由智能体创建项目和任务。" : "调整筛选或搜索内容。").foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 40)
      }
     }
    }
   }.padding(34)
-  .sheet(isPresented: $creating) {
-   VStack(alignment: .leading, spacing: 20) {
-    Text("新建项目").font(.title2.bold())
-    TextField("项目名称", text: $title).textFieldStyle(.roundedBorder).onSubmit(create)
-    HStack { Spacer(); Button("取消") { creating = false }; Button("创建", action: create).buttonStyle(DeskButton(primary: true)).disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
-   }.padding(28).frame(width: 380)
-  }
  }
- private func create() { guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }; model.addProject(title); title = ""; creating = false }
 }
 struct ProjectChooser: View {
  @ObservedObject var model: Model
@@ -106,8 +95,6 @@ struct ProjectChooser: View {
 struct FocusPanel: View {
  @ObservedObject var model: Model
  @State private var collapsed = false
- @State private var title = ""
- @FocusState private var recording: Bool
  var body: some View {
   VStack(alignment: .leading, spacing: 0) {
    HStack { Text("今日进度").foregroundStyle(.secondary); Spacer(); Button { collapsed.toggle() } label: { Image(systemName: collapsed ? "chevron.down" : "minus") }.buttonStyle(.plain).help(collapsed ? "展开" : "收起") }.padding(20)
@@ -135,11 +122,20 @@ struct FocusPanel: View {
     }.padding(22)
    }
    if !collapsed {
-    HStack { TextField("＋ 快速记录", text: $title).textFieldStyle(.plain).focused($recording).onSubmit(add); Button("添加", action: add).buttonStyle(.plain).foregroundStyle(Desk.green).disabled(model.selection == nil || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }.padding(12).background(Desk.wash, in: RoundedRectangle(cornerRadius: 6)).padding(20)
-    Button("快速记录") { recording = true }.keyboardShortcut("k").hidden().frame(height: 0)
+    AgentStatus(model: model).padding(20)
    }
   }.background(.white).foregroundStyle(Desk.ink).preferredColorScheme(.light)
    .alert("操作失败", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("确定") { model.error = nil } } message: { Text(model.error ?? "") }
  }
- private func add() { guard model.selection != nil, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }; model.addTask(title); title = "" }
+
+}
+
+struct AgentStatus: View {
+ @ObservedObject var model: Model
+ var body: some View {
+  VStack(alignment: .leading, spacing: 6) {
+   Text(model.bindings.isEmpty ? "智能体尚未授权项目" : "已授权 \(model.bindings.count) 个项目映射").font(.caption)
+   Text("新增事项请交给已接入智能体；接入说明见设置与接入。").font(.caption).foregroundStyle(.secondary)
+  }
+ }
 }
