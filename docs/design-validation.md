@@ -14,7 +14,8 @@
 - Debug、Release `CoreChecks` 通过。
 - `python3 scripts/check-launch.py` 通过：隔离样例迁移、启动补扫、运行中目录事件、CLI 回执与快照。
 - `codesign --verify --deep --strict dist/Workdesk.app`、`git diff --check` 通过。
-- 另以隔离 WORKDESK_DATA_DIR 启动实际 app；CoreGraphics 确认原生窗口。computer_use 按 app 和精确 pid/window_id 均返回 0×0，无元素；screencapture 按窗口失败。因此没有完成实际像素对比或交互验收，不将启动成功称为视觉通过。未截取其他应用内容。
+- 后续通过 macOS `screencapture -x` 全屏截图实际查看窗口：项目总览确认浅灰侧栏、绿色选中和空状态布局；会议页发现左侧 TextEditor 挤压右栏，已改为 GeometryReader 的 55%/45% 分栏，并将顶部操作统一为扁平按钮。修正后截图确认两栏宽度恢复，没有面板裁切。
+- 尚未完成按钮逐一点击验收。computer_use 仍返回 0×0，不能完成自动元素操作。
 - CLT 环境仍报告 XCTest PlatformPath 缺失，CoreChecks 可运行。无性能验收结论。
 
 未访问真实项目/聊天/音频数据库，未修改 Hermes 配置或发送消息。隔离视觉检查进程已终止。后续需在可捕获窗口的桌面会话完成项目创建、筛选、面板记录/完成及会议草稿确认的人工或自动点击验收。

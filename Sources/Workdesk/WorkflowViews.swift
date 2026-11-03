@@ -3,7 +3,7 @@ import WorkdeskCore
 
 struct Board: View {
  @ObservedObject var model: Model
- @State private var section = "项目总览"
+ @AppStorage("boardSection") private var section = "项目总览"
  var body: some View {
   HStack(spacing: 0) {
    VStack(alignment: .leading, spacing: 8) {
@@ -99,24 +99,26 @@ struct MeetingsView: View {
    Text("会议收件箱").font(.system(size: 24, weight: .semibold))
    ProjectChooser(model: model).padding(.vertical, 10)
    Text("粘贴并编辑会议文字。每行使用「待办：」「TODO:」或「- [ ] 」；草稿保留行号及原文中的时间戳，不推断负责人和日期。").font(.caption)
-   HStack {
-    Menu("打开已保存会议") {
+   HStack(spacing: 10) {
+    Menu {
      ForEach(model.meetings) { meeting in Button(String(meeting.text.prefix(40))) { current = meeting; text = meeting.text; loadDrafts(meeting.id) } }
-    }
-    Button("新会议") { current = nil; text = ""; drafts = [] }
+    } label: { Text("打开已保存会议") }.menuStyle(.button).buttonStyle(DeskButton())
+    Button("新会议") { current = nil; text = ""; drafts = [] }.buttonStyle(DeskButton())
     Button("保存文字并生成草稿") { model.perform {
      guard let project = model.selection, let store = model.store else { return }
      let id = try await store.saveMeeting(project: project, text: text, id: current?.id, expected: current?.version)
      await model.reload(); current = model.meetings.first { $0.id == id }; drafts = try await store.meetingDrafts(id)
-    } }.disabled(model.selection == nil || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    } }.buttonStyle(DeskButton(primary: true)).disabled(model.selection == nil || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    Spacer()
    }
    Divider().padding(.vertical, 12)
+   GeometryReader { geo in
    HStack(alignment: .top, spacing: 28) {
     VStack(alignment: .leading, spacing: 16) {
      Text("会议原文").font(.system(size: 18, weight: .semibold))
      Text("保留讨论上下文与原文依据").font(.caption).foregroundStyle(.secondary)
      TextEditor(text: $text).font(.system(size: 14)).scrollContentBackground(.hidden).padding(14).background(Desk.wash, in: RoundedRectangle(cornerRadius: 6)).frame(minHeight: 230)
-    }.frame(maxWidth: .infinity)
+    }.frame(width: max(300, (geo.size.width - 28) * 0.55), alignment: .leading)
     Divider()
     VStack(alignment: .leading, spacing: 18) {
      HStack { Text("待办草稿").font(.system(size: 18, weight: .semibold)); Spacer(); Text("确认后入库").font(.caption).foregroundStyle(.secondary) }
@@ -130,7 +132,8 @@ struct MeetingsView: View {
       }
      }
      Text("未确认内容不会覆盖现有任务。").font(.caption).foregroundStyle(.secondary)
-    }.frame(maxWidth: .infinity)
+    }.frame(maxWidth: .infinity, alignment: .leading)
+   }
    }
   }.padding(34).onChange(of: model.selection) { _ in current = nil; text = ""; drafts = [] }
  }
