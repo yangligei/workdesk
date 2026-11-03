@@ -1,6 +1,7 @@
 # Build and tooling
 .build/
 build/
+dist/
 DerivedData/
 .swiftpm/
 *.xcuserstate
