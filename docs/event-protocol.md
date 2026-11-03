@@ -1,54 +1,31 @@
-# 本地事件协议 v1 与 QQ 接入边界
+# 本地签名事件协议 v1
 
-当前实现使用 JSON 的 **camelCase** 字段（下例是实际编码），不依赖 Hermes 内部模块，不监听网络，不安装服务。应用退出或休眠期间不处理事件；再次启动补扫。CLI 是短命进程，从不打开正式数据库。
+无网络监听、无常驻服务、不依赖 Hermes 内部模块。真实 Hermes/QQ 未连接；通用适配器仅显式上报调用方提供的文字，不读取日志或聊天。
 
-## 使用
-
-在应用「项目任务」选择项目，进入「来源与事件」，绑定来源 ID 与生产者项目别名。绑定只准许该来源/别名访问指定项目，可撤销。
+## 登记与使用
 
 ```sh
-# 与应用设置相同的 WORKDESK_DATA_DIR；未设置时使用默认 Application Support/Workdesk
 CLI=dist/Workdesk.app/Contents/MacOS/WorkdeskCLI
 "$CLI" projects
-"$CLI" report local-agent demo '构建已结束，待人工验收'
-"$CLI" submit event.json
+"$CLI" enroll --name local-agent --project PROJECT_UUID --alias demo --token-file "$HOME/.workdesk-credentials/local-agent.key"
+"$CLI" report --source local-agent --alias demo --text '构建已结束，待人工验收' --token-file "$HOME/.workdesk-credentials/local-agent.key"
 "$CLI" receipt 返回的文件名.json
 ```
 
-report/submit 输出队列文件名，**不代表应用已接受**。应用运行后读取 receipt；不存在表示尚未处理（CLI 非零退出）。不自动等待、不循环重试。重试同一逻辑操作必须保存并复用 sourceID/eventID；report 每次调用产生新 ID。
+应用与 CLI 必须使用相同 WORKDESK_DATA_DIR。enroll/projects/drain 会打开数据库；report/submit/receipt 仅使用文件协议。CLI 进程短命；drain 适合显式离线处理，避免和应用同时消费同一收件箱。report/submit 输出文件名只代表排队；receipt 中 accepted/rejected/conflict 才是结果。应用退出后事件等待启动补扫。
 
-```json
-{
-  "schemaVersion": 1,
-  "eventID": "stable-request-001",
-  "sourceID": "local-agent",
-  "projectID": "demo",
-  "occurredAt": "2026-11-03T01:00:00Z",
-  "type": "task.rename",
-  "text": "更新任务标题",
-  "taskID": "应用中的任务 UUID",
-  "expectedVersion": 1
-}
-```
+## 签名与授权
 
-支持 progress（只记录）、task.create（创建待办）、task.rename（必须 taskID/expectedVersion，保留状态）。任务完成、阶段变化、执行结束推断均不支持。修改命令在事务内检查版本，旧版本返回 conflict。乱序 progress 只保留原始来源时间，不回退状态。回执为 eventID/outcome/detail，outcome 为 accepted/rejected/conflict；detail 在创建成功时包含任务 ID。重复键 sourceID+eventID 返回首次回执，即使重复内容变化也不再执行；提交后回执写失败可安全重放。
+enroll 生成 Ed25519 私钥，使用 O_EXCL/O_NOFOLLOW 创建 0600 文件，拒绝覆盖既有文件或链接，数据库只保存公钥（历史列名 token_hash）。写文件失败不轮换身份，数据库事务失败删除新凭据。轮换用新的文件路径；同一来源旧签名立即失效，未处理旧事件会拒绝。来源的所有现有绑定保留，可在 UI 撤销。不得打印、提交或转发私钥。
 
-## 文件与恢复
+JSON camelCase 字段：schemaVersion=1、eventID、sourceID、projectID（绑定别名）、taskID（可选）、occurredAt（ISO8601）、type、text、expectedVersion（可选）、signature（Base64）。Ed25519 签名内容按如下顺序：schemaVersion、sourceID、projectID、taskID 或空串、occurredAt、type、text、expectedVersion 或空串、eventID。每个字段编码为 UTF-8 字节长度、冒号、字段值，字段之间以竖线连接。CLI report 负责签名；submit 接收已签名 JSON。
 
-同一数据目录下 inbox/、receipts/，新建目录权限 0700。生产者写临时文件，再原子改名为随机 .json；CLI 使用 Foundation 原子写。应用只读取 .json，最大 64 KiB，O_NOFOLLOW + fstat 拒绝链接、非普通文件及超大文件。成功事务后原子写回执再移除输入；数据库故障保留输入。无效文件生成拒绝回执并移除输入，符号链接仅移除链接本身。保留最近 200 条数据库事件的 UI 视图，底层事件及回执暂无自动清理。
+先验证签名和当前来源/别名授权，再查询 sourceID+eventID 去重，未签名重放不能取得 accepted。有效重复返回首次回执；必须复用同一事件与签名重试。report 每次生成新 eventID。相同 ID 的再次签名内容仍按首次结果处理；不要跨逻辑操作重用 ID。task.rename 只可修改映射项目内的任务，并检查 expectedVersion。progress 仅记录；task.create 创建待办；任务完成必须本地确认。拒绝未授权项目、外部完成及不支持类型。
 
-目录监听采用 DispatchSource，启动补扫，读取期间收到通知会追加扫描，无周期轮询。目录被外部替换后须重启应用恢复监听。事件/快照文件 I/O 在 actor 上执行。当前未提供断电 fsync 保证、强对抗目录替换防护、磁盘配额和跨进程单实例锁；不要同时运行多个使用同一目录的应用。
+## 文件与边界
 
-## 来源、安全与快照
+根目录及 inbox/receipts/ 为 0700，新输入原子写入随机 .json；限制 64 KiB，以 O_NOFOLLOW/fstat 拒绝链接、超大或非普通文件。事务成功后写回执，再移除输入；存储失败保留输入，提交后回执失败可以重放。目录事件驱动，无轮询；目录被替换后须重启。无断电 fsync 保证、目录替换强隔离、磁盘配额或跨进程单实例锁。
 
-来源映射是可信本机生产者的授权配置，**不是身份认证**。尚未实现来源令牌。相同 macOS 用户可伪造来源或读取文件；不作为多租户/远程权限边界。根目录及协议子目录不可使用符号链接；祖先目录必须由用户控制，不能对抗同用户并发目录替换。错误消息不包含事件内容；事件审计保留来源、项目、原文、来源/接收时间和处理结果。手动 CRUD 与绑定变更尚无统一操作审计。
+同一 macOS 用户仍可读取文件和修改数据库，不是远程、多租户或同用户恶意进程隔离。只对可信本机调用方提供 CLI。projects / projects.json 包含全部本地项目及截止设置，不是按来源过滤的远程查询，禁止直接转发 QQ。审计存原始事件文本；调用方不要把密钥放入文字。UI 仅展示最近 200 条，底层暂无自动清理。手动操作暂无统一审计。
 
-projects.json 是应用生成的本地缓存，包含全部项目 ID、名称、阶段和版本，不包含任务/会议正文；关闭应用后可能过时。它并非按来源过滤的远程回复，也不可直接转发到 QQ。
-
-## QQ：未连接
-
-本版本没有验证或启用任何 QQ 桥接、发件人身份、消息接收或发送能力。拟议适配器须通过公开扩展点：验证发件人 → 限定 sourceID/projectID → 用稳定消息 ID 去重 → 写事件 → 消费回执 → 按渠道权限构造有限回复。eventID 可作请求关联；队列文件名仅是本机回执位置。接入前还须实现令牌/身份绑定与按项目授权的查询回复，并实测重投及离线行为。不可把该本地 CLI 直接暴露为任意远程文件或 shell 接口。
-
-## 会议文字
-
-「会议草稿」按当前项目保存文字与版本，仅显式待办标记生成草稿，不调用模型。原文中的时间戳与行号作为证据保留；没有时间戳则仅显示行号。草稿标题可编辑，逐项确认后事务内创建待办并关联任务 ID，重复确认不重复创建。确认前修改文字会重建草稿；确认后锁定原记录，需新建会议修订，保留已确认依据。尚无音频、转写、智能总结、负责人/日期字段、草稿删除或原文跳转定位。
+会议文字仍仅按显式待办标记生成带行号/时间戳的草稿，逐条人工确认，重复确认幂等；无音频转写或模型。

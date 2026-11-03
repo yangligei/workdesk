@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix="workdesk-launch-", dir=os.environ["TMPD
     # A legacy-schema fixture also exercises startup migrations.
     with sqlite3.connect(root / "workdesk.sqlite") as db:
         db.executescript("CREATE TABLE projects(id TEXT PRIMARY KEY,title TEXT NOT NULL); INSERT INTO projects VALUES('fixture','隔离演示');")
-    env = dict(os.environ, WORKDESK_DATA_DIR=str(root))
+    env = dict(os.environ, WORKDESK_DATA_DIR=str(root), WORKDESK_DISABLE_NOTIFICATIONS="1")
     def launch():
         return subprocess.Popen([str(app)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     def wait_for(predicate):
@@ -33,12 +33,13 @@ with tempfile.TemporaryDirectory(prefix="workdesk-launch-", dir=os.environ["TMPD
         # Stop before fixture setup so only the app writes while it runs.
         process.terminate()
         process.communicate(timeout=5)
-        with sqlite3.connect(root / "workdesk.sqlite") as db:
-            db.execute("INSERT INTO bindings VALUES('fixture','demo','fixture')")
-        queued = subprocess.check_output([str(cli), "report", "fixture", "demo", "离线排队"], env=env, text=True).strip()
+        token = root / "fixture.key"
+        subprocess.check_call([str(cli), "enroll", "--name", "fixture", "--project", "fixture", "--alias", "demo", "--token-file", str(token)], env=env, stdout=subprocess.DEVNULL)
+        report = [str(cli), "report", "--source", "fixture", "--alias", "demo", "--token-file", str(token), "--text"]
+        queued = subprocess.check_output(report + ["离线排队"], env=env, text=True).strip()
         process = launch()
         wait_for(lambda: (root / "receipts" / queued).exists())
-        live = subprocess.check_output([str(cli), "report", "fixture", "demo", "目录通知实时更新"], env=env, text=True).strip()
+        live = subprocess.check_output(report + ["目录通知实时更新"], env=env, text=True).strip()
         wait_for(lambda: (root / "receipts" / live).exists())
         for filename in (queued, live):
             receipt = json.loads(subprocess.check_output([str(cli), "receipt", filename], env=env))

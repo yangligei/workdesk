@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 public struct ProgressEvent: Codable, Sendable {
  public var schemaVersion = 1
@@ -10,8 +11,19 @@ public struct ProgressEvent: Codable, Sendable {
  public var type: String
  public var text: String
  public var expectedVersion: Int?
+ public var signature: String?
  public init(sourceID: String, projectID: String, type: String, text: String, taskID: String? = nil, expectedVersion: Int? = nil) {
   self.sourceID = sourceID; self.projectID = projectID; self.type = type; self.text = text; self.taskID = taskID; self.expectedVersion = expectedVersion
+ }
+ /// Stable field framing prevents ambiguous concatenation between signed fields.
+ public var signingPayload: Data {
+  Data([String(schemaVersion), sourceID, projectID, taskID ?? "", occurredAt, type, text, expectedVersion.map(String.init) ?? "", eventID].map { "\($0.utf8.count):\($0)" }.joined(separator: "|").utf8)
+ }
+}
+public enum EventSigning {
+ public static func sign(_ event: inout ProgressEvent, privateKey: String) throws {
+  guard let data = Data(base64Encoded: privateKey), let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: data) else { throw StoreError.database("凭据文件无效") }
+  event.signature = try key.signature(for: event.signingPayload).base64EncodedString()
  }
 }
 public struct Receipt: Codable, Equatable, Sendable {
@@ -51,14 +63,21 @@ public extension Store {
  }
  func receive(_ event: ProgressEvent) throws -> Receipt {
   try integrationSchema()
+  guard let signature = event.signature, try verify(source: event.sourceID, message: event.signingPayload, signature: signature) else {
+   return Receipt(eventID: event.eventID, outcome: "rejected", detail: "签名缺失或无效；拒绝写入")
+  }
   _ = try query("BEGIN IMMEDIATE")
   do {
+   guard let mapping = try query("SELECT project FROM bindings WHERE source=? AND alias=?", [event.sourceID, event.projectID]).first?.first else {
+    _ = try query("COMMIT")
+    return Receipt(eventID: event.eventID, outcome: "rejected", detail: "未授权来源/项目")
+   }
    if let row = try query("SELECT outcome,detail FROM events WHERE source=? AND id=?", [event.sourceID,event.eventID]).first {
     _ = try query("COMMIT"); return Receipt(eventID: event.eventID, outcome: row[0], detail: row[1])
    }
    var outcome = "rejected", detail = "无效事件或未授权来源/项目"
-   let mapping = try query("SELECT project FROM bindings WHERE source=? AND alias=?", [event.sourceID,event.projectID]).first?.first
-   if event.schemaVersion == 1, !event.eventID.isEmpty, event.eventID.utf8.count <= 128, event.sourceID.utf8.count <= 128, event.text.utf8.count <= 32000, ISO8601DateFormatter().date(from: event.occurredAt) != nil, let project = mapping {
+   if event.schemaVersion == 1, !event.eventID.isEmpty, event.eventID.utf8.count <= 128, event.sourceID.utf8.count <= 128, event.text.utf8.count <= 32000, ISO8601DateFormatter().date(from: event.occurredAt) != nil {
+    let project = mapping
     switch event.type {
     case "task.create":
      if !event.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -75,7 +94,7 @@ public extension Store {
     default: detail = "不支持的类型；任务完成须本地确认"
     }
    }
-   _ = try query("INSERT INTO events(source,id,project,occurred,received,type,text,outcome,detail) VALUES(?,?,?,?,?,?,?,?,?)", [event.sourceID,event.eventID,mapping ?? event.projectID,event.occurredAt,ISO8601DateFormatter().string(from: Date()),event.type,event.text,outcome,detail])
+   _ = try query("INSERT INTO events(source,id,project,occurred,received,type,text,outcome,detail) VALUES(?,?,?,?,?,?,?,?,?)", [event.sourceID,event.eventID,mapping,event.occurredAt,ISO8601DateFormatter().string(from: Date()),event.type,event.text,outcome,detail])
    _ = try query("COMMIT")
    return Receipt(eventID: event.eventID, outcome: outcome, detail: detail)
   } catch { _ = try? query("ROLLBACK"); throw error }

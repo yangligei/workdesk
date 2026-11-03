@@ -11,6 +11,7 @@ import WorkdeskCore
  @Published var audit: [AuditEntry] = []
  @Published var bindings: [SourceBinding] = []
  @Published var meetings: [Meeting] = []
+ let notifications = DeadlineNotifications()
  var store: Store?
  private var root: URL?
  private var inbox: EventInbox?
@@ -43,6 +44,7 @@ import WorkdeskCore
    audit = try await store.audit(); bindings = try await store.bindings()
    meetings = try await selection.mapAsyncMeetings(store)
    if let root { try await store.exportProjects(to: root) }
+   await notifications.reconcile(projects, tasks: projectTasks)
   } catch { self.error = error.localizedDescription }
  }
  func addProject(_ title: String) { perform {

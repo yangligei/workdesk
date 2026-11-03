@@ -68,6 +68,7 @@ struct ProjectOverview: View {
          Text(project.title).font(.system(size: 17, weight: .semibold)).foregroundStyle(Desk.ink)
          Text((project.stage.isEmpty ? "阶段未设置" : project.stage) + " → 下一步：" + (tasks.first { $0.status != "完成" }?.title ?? "暂无待办"))
           .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+         DeadlineLabel(project: project, tasks: tasks)
         }
         Spacer(minLength: 12)
         StatusPill(text: projectStatus(tasks))

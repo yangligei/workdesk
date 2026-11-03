@@ -1,7 +1,12 @@
 import Foundation
 import CSQLite
 
-public struct Project: Identifiable, Codable, Sendable { public let id: String; public let title: String; public var stage: String = ""; public var version: Int = 1 }
+public struct Project: Identifiable, Codable, Sendable {
+ public let id: String; public let title: String; public var stage: String = ""; public var version: Int = 1
+ public var deadline: Date? = nil
+ public var timeZone: String = TimeZone.current.identifier
+ public var reminderHours: [Double] = [24]
+}
 public struct WorkTask: Identifiable, Sendable {
  public let id: String
  public let title: String
@@ -45,7 +50,10 @@ public actor Store {
   let columns = try Self.execute(handle, "PRAGMA table_info(projects)").map { $0[1] }
   if !columns.contains("stage") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN stage TEXT NOT NULL DEFAULT ''") }
   if !columns.contains("version") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN version INTEGER NOT NULL DEFAULT 1") }
-  _ = try Self.execute(handle, "PRAGMA user_version=2")
+  if !columns.contains("deadline") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN deadline REAL") }
+  if !columns.contains("timezone") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'") }
+  if !columns.contains("reminders") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN reminders TEXT NOT NULL DEFAULT '[24]'") }
+  _ = try Self.execute(handle, "PRAGMA user_version=3")
  }
  deinit { sqlite3_close(db) }
  func query(_ sql: String, _ values: [String] = []) throws -> [[String]] { try Self.execute(db, sql, values) }
@@ -72,10 +80,10 @@ public actor Store {
   guard !value.isEmpty else { throw StoreError.invalidTitle }; return value
  }
  public func projects() throws -> [Project] {
-  try query("SELECT id,title,stage,version FROM projects ORDER BY rowid").map { Project(id: $0[0], title: $0[1], stage: $0[2], version: Int($0[3])!) }
+  try query("SELECT id,title,stage,version,deadline,timezone,reminders FROM projects ORDER BY rowid").map { Project(id: $0[0], title: $0[1], stage: $0[2], version: Int($0[3])!, deadline: Double($0[4]).map { Date(timeIntervalSince1970: $0) }, timeZone: $0[5], reminderHours: (try? JSONDecoder().decode([Double].self, from: Data($0[6].utf8))) ?? [24]) }
  }
  public func createProject(_ text: String) throws -> Project {
-  let item = Project(id: UUID().uuidString, title: try title(text))
+  let item = Project(id: UUID().uuidString, title: try title(text), timeZone: "UTC")
   _ = try query("INSERT INTO projects(id,title) VALUES(?,?)", [item.id, item.title]); return item
  }
  public func updateProject(_ id: String, title text: String, stage: String, expected: Int) throws {
