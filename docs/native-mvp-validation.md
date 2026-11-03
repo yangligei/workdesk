@@ -10,4 +10,12 @@
 - `git diff --check` 通过。
 - `swift test` 受环境阻塞：XCTest not available，当前 Command Line Tools 无 SDK PlatformPath；保留 XCTest 用例供完整 Xcode 环境运行。
 
-尚未进行可视界面和按钮交互验收；菜单栏、置顶和关闭窗口行为需进一步实际操作确认。未实现事件收件箱、QQ、会议和模型接入。下一阶段补编辑/阶段管理及标准数据量性能测量。
+以上为上一轮 MVP 记录。本轮实现事件收件箱/CLI、编辑/阶段、会议文字草稿，新增验证见下。QQ、音频和模型仍未接入。
+
+## 事件与会议增量验证
+
+- Debug 与 Release `CoreChecks` 通过：原有 CRUD 回归，项目阶段、来源映射、重复事件、过期事件版本、越权项目、外部完成拒绝、已提交事件重放回执、原子收件箱、损坏/超大/符号链接文件拒绝、未完成临时文件忽略、会议证据与重复确认。
+- `bash scripts/build-app.sh` 成功；CLI 打包进 Contents/MacOS；`codesign --verify --deep --strict` 通过。
+- `python3 scripts/check-launch.py` 通过：真实 Release app 使用 TMPDIR 隔离合成旧 schema 数据，迁移、启动补扫、运行中 CLI 目录通知、回执和项目缓存均通过，退出前进程存活、stderr 空；样例清理。
+- 未进行可视控件交互验收或 10 分钟标准性能测量；不将引擎/进程结果称为 UI 验收。仅 CLT 的 XCTest 环境警告仍存在，使用 CoreChecks。
+- 没有访问真实聊天/音频/项目数据库，没有修改 Hermes 配置、发送消息或推送 Git。

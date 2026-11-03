@@ -1,7 +1,7 @@
 import Foundation
 import CSQLite
 
-public struct Project: Identifiable, Sendable { public let id: String; public let title: String }
+public struct Project: Identifiable, Codable, Sendable { public let id: String; public let title: String; public var stage: String = ""; public var version: Int = 1 }
 public struct WorkTask: Identifiable, Sendable {
  public let id: String
  public let title: String
@@ -42,9 +42,14 @@ public actor Store {
    let message = String(cString: sqlite3_errmsg(handle)); sqlite3_close(handle)
    throw StoreError.database(message)
   }
+  let columns = try Self.execute(handle, "PRAGMA table_info(projects)").map { $0[1] }
+  if !columns.contains("stage") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN stage TEXT NOT NULL DEFAULT ''") }
+  if !columns.contains("version") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN version INTEGER NOT NULL DEFAULT 1") }
+  _ = try Self.execute(handle, "PRAGMA user_version=2")
  }
  deinit { sqlite3_close(db) }
- private func query(_ sql: String, _ values: [String] = []) throws -> [[String]] {
+ func query(_ sql: String, _ values: [String] = []) throws -> [[String]] { try Self.execute(db, sql, values) }
+ private static func execute(_ db: OpaquePointer, _ sql: String, _ values: [String] = []) throws -> [[String]] {
   var statement: OpaquePointer?
   guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { throw StoreError.database(String(cString: sqlite3_errmsg(db))) }
   defer { sqlite3_finalize(statement) }
@@ -62,16 +67,20 @@ public actor Store {
    })
   }
  }
- private func title(_ text: String) throws -> String {
+ func title(_ text: String) throws -> String {
   let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
   guard !value.isEmpty else { throw StoreError.invalidTitle }; return value
  }
  public func projects() throws -> [Project] {
-  try query("SELECT id,title FROM projects ORDER BY rowid").map { Project(id: $0[0], title: $0[1]) }
+  try query("SELECT id,title,stage,version FROM projects ORDER BY rowid").map { Project(id: $0[0], title: $0[1], stage: $0[2], version: Int($0[3])!) }
  }
  public func createProject(_ text: String) throws -> Project {
   let item = Project(id: UUID().uuidString, title: try title(text))
   _ = try query("INSERT INTO projects(id,title) VALUES(?,?)", [item.id, item.title]); return item
+ }
+ public func updateProject(_ id: String, title text: String, stage: String, expected: Int) throws {
+  _ = try query("UPDATE projects SET title=?,stage=?,version=version+1 WHERE id=? AND version=?", [try title(text), stage, id, String(expected)])
+  guard sqlite3_changes(db) == 1 else { throw StoreError.conflict }
  }
  public func deleteProject(_ id: String) throws { _ = try query("DELETE FROM projects WHERE id=?", [id]) }
  public func tasks(_ project: String) throws -> [WorkTask] {

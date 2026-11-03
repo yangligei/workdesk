@@ -2,7 +2,7 @@
 
 轻量 macOS 菜单栏与置顶悬浮窗，汇总个人任务、智能体进度和会议待办。
 
-状态：原生手动管理 MVP 已实现；智能体事件和 QQ 接口尚未实现。
+状态：原生项目/阶段编辑、原子文件事件收件箱与 CLI、来源映射和事件审计、会议文字证据草稿已实现。QQ 明确未连接。
 
 ## 编译与运行
 
@@ -20,7 +20,9 @@ open dist/Workdesk.app
 
 默认数据在 `~/Library/Application Support/Workdesk/workdesk.sqlite`。设置 `WORKDESK_DATA_DIR` 可指定隔离样例目录。关闭窗口后可从菜单栏重新打开；退出菜单结束应用。打包脚本生成本机架构的 Release `.app` 并作 ad-hoc 本地签名，未进行公证。
 
-当前限制：尚无项目改名、任务标题编辑、阶段字段、审计、事件收件箱、智能体/QQ/会议接入；性能预算尚未按规定数据量与 10 分钟流程验收。
+项目可改名和编辑阶段，任务标题回车保存。会议文字用显式待办标记生成可编辑草稿，逐项确认。事件协议与 CLI 用法、可靠性和安全边界见 [事件协议](docs/event-protocol.md)。
+
+当前限制：尚未接入真实智能体/QQ、音频转写或模型；无来源令牌、统一手动操作审计；性能预算尚未按规定数据量与 10 分钟流程验收。可运行 `python3 scripts/check-launch.py` 隔离验证真实 app 和 CLI。
 
 - [简要需求](docs/requirements.md)
 - [轻量架构](docs/architecture.md)
