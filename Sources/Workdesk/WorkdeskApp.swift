@@ -135,7 +135,8 @@ struct TaskBoard: View {
   let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   item.button?.image = NSImage(systemSymbolName: "checklist", accessibilityDescription: "Workdesk：单击置顶窗，双击菜单")
   item.button?.target = self; item.button?.action = #selector(clicked)
-  item.button?.sendAction(on: [.leftMouseUp])
+  // Handle presses before AppKit's button tracking can consume the matching release.
+  item.button?.sendAction(on: [.leftMouseDown])
   self.item = item
   FloatingWindow.shared.show(model)
  }
@@ -178,5 +179,11 @@ struct TaskBoard: View {
 }
 @main struct WorkdeskApp: App {
  @NSApplicationDelegateAdaptor(StatusBarController.self) private var delegate
- var body: some Scene { Settings { EmptyView() } }
+ var body: some Scene {
+  Settings {
+   IntegrationView(model: delegate.model)
+    .frame(minWidth: 720, minHeight: 500)
+    .foregroundStyle(Desk.ink).tint(Desk.green).preferredColorScheme(.light)
+  }
+ }
 }
