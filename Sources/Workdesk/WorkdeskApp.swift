@@ -13,6 +13,12 @@ import WorkdeskCore
  @Published var bindings: [SourceBinding] = []
  @Published var meetings: [Meeting] = []
  var store: Store?
+ var connectionRoot: URL? { root }
+ var connectionCredentials: URL {
+  if ProcessInfo.processInfo.environment["WORKDESK_DATA_DIR"] != nil, let root { return root.appendingPathComponent("credentials") }
+  return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".workdesk-credentials")
+ }
+ var connectionInbox: EventInbox? { inbox }
  private var root: URL?
  private var inbox: EventInbox?
  private var watcher: InboxWatcher?

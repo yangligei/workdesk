@@ -12,7 +12,7 @@ struct Board: View {
      Button { section = item } label: { Text(item).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 12).foregroundStyle(section == item ? Desk.green : .secondary).background(section == item ? Desk.selected : .clear, in: RoundedRectangle(cornerRadius: 6)) }.buttonStyle(.plain)
     }
     Spacer()
-    Text("○ QQ 未连接").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
+    Text("○ QQ 收发待验证").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
     Button("设置与接入") { section = "设置与接入" }.buttonStyle(.plain).foregroundStyle(.secondary).padding(12)
     Button("显示置顶窗") { FloatingWindow.shared.show(model) }.buttonStyle(DeskButton()).padding(.bottom, 20)
    }.padding(.horizontal, 18).frame(width: 195).background(Desk.sidebar)
@@ -60,7 +60,10 @@ struct IntegrationView: View {
  @State private var source = ""
  @State private var alias = ""
  var body: some View {
-  VStack(alignment: .leading) {
+  ScrollView {
+  VStack(alignment: .leading, spacing: 12) {
+   AgentSetupView(model: model)
+   DisclosureGroup("高级 · 命令与手动映射") {
    Text("本机智能体 · 签名文件协议").font(.headline)
    Text("不读取聊天、不发送消息，未自动连接 QQ 或 Hermes。登记来源后，通用 CLI 可接收任何进程显式上报；凭据只保存在权限 600 的文件中。相同 macOS 用户仍可访问应用数据，这不是系统用户隔离。").foregroundStyle(.secondary)
    Text("首次接入：使用 WorkdeskCLI enroll --name NAME --token-file PATH 登记；仅本机 CLI grant-create --name NAME --allow yes 可授予创建项目权限。未授予时默认拒绝。详见 docs/event-protocol.md。").font(.caption).textSelection(.enabled)
@@ -76,6 +79,7 @@ struct IntegrationView: View {
      try await model.store?.bind(source: source, alias: alias, project: project); await model.reload()
     } }.disabled(model.selection == nil || source.isEmpty || alias.isEmpty)
    }
+   }
    ForEach(model.bindings) { binding in
     HStack {
      Text("\(binding.source) / \(binding.alias) → \(model.projects.first { $0.id == binding.project }?.title ?? binding.project)")
@@ -90,8 +94,9 @@ struct IntegrationView: View {
      Text(entry.text)
      Text("来源时间 \(entry.occurred) · 接收 \(entry.received)").font(.caption).foregroundStyle(.secondary)
     }.textSelection(.enabled)
-   }
+   }.frame(height: 240)
   }.padding()
+  }
  }
 }
 struct MeetingsView: View {
