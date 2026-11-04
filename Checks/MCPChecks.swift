@@ -73,7 +73,7 @@ func runMCPChecks() async throws {
  let fixtureHome = root.appendingPathComponent("home")
  let executable = CommandLine.arguments[0].contains("release") ? ".build/release/WorkdeskCLI" : ".build/debug/WorkdeskCLI"
  let cli = URL(fileURLWithPath: executable, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)).path
- for client in [AgentClient.claude, .opencode] {
+ for client in [AgentClient.opencode] {
   let plan = ConnectionPlan(client: client, cli: cli, root: root, source: "fixture", credential: key, home: fixtureHome, environment: [:])
   let path = client.config(home: fixtureHome, environment: [:])!
   try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)

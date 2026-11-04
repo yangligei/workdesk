@@ -78,9 +78,14 @@ public struct ConnectionPlan: Sendable {
   try (before ?? Data()).write(to: pending, options: [.atomic])
   try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: pending.path)
   do {
-  if client == .hermes || client == .codex {
+  if client == .hermes || client == .codex || client == .claude {
    guard let executable = client.executable(home: home, environment: environment) else { throw StoreError.database("未找到客户端可执行文件，请先安装或使用通用 MCP 配置") }
-   let args = client == .hermes ? ["mcp", "add", "workdesk", "--command", cli, "--args"] + arguments : ["mcp", "add", "workdesk", "--", cli] + arguments
+   let args: [String]
+   switch client {
+   case .hermes: args = ["mcp", "add", "workdesk", "--command", cli, "--args"] + arguments
+   case .codex: args = ["mcp", "add", "workdesk", "--", cli] + arguments
+   default: args = ["mcp", "add", "--transport", "stdio", "--scope", "user", "workdesk", "--", cli] + arguments
+   }
    try Self.run(executable, args: args, environment: environment)
   } else {
    var object: [String: Any] = [:]
@@ -119,9 +124,9 @@ public struct ConnectionPlan: Sendable {
  public func undo() throws {
   let record = try JSONDecoder().decode(Record.self, from: InboxFiles.read(state, limit: 8 * 1024 * 1024))
   guard let path = client.config(home: home, environment: environment), path.path == record.path, let data = try readConfig(path), hash(data) == record.installedHash else { throw StoreError.database("配置已有用户修改或路径改变，已停止撤销以保留改动；请在客户端只移除 workdesk") }
-  if client == .hermes || client == .codex {
+  if client == .hermes || client == .codex || client == .claude {
    guard let executable = client.executable(home: home, environment: environment) else { throw StoreError.database("找不到客户端；请在客户端移除 workdesk") }
-   try Self.run(executable, args: ["mcp", "remove", "workdesk"], environment: environment)
+   try Self.run(executable, args: ["mcp", "remove", "workdesk"] + (client == .claude ? ["--scope", "user"] : []), environment: environment)
   } else if let before = record.before { try before.write(to: path, options: .atomic) }
   else { try FileManager.default.removeItem(at: path) }
   try FileManager.default.removeItem(at: state)
