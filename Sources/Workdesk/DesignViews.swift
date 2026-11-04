@@ -188,23 +188,8 @@ struct InlineStatus: View {
  let label: String
  let choose: (String) -> Void
  var body: some View {
-  Menu {
-   ForEach(["待办", "进行中", "阻塞", "完成"], id: \.self) { status in
-    Button { choose(status) } label: { if status == value { Label(status, systemImage: "checkmark") } else { Text(status) } }
-   }
-  } label: {
-   HStack(spacing: 8) {
-    Text(StatusAppearance.symbol(value) + " " + value)
-    Spacer(minLength: 10)
-    Image(systemName: "chevron.down").font(.system(size: 9))
-   }
-   .font(.system(size: 13, weight: .semibold))
-   .padding(.horizontal, 15).frame(width: 132, height: 48)
-   .foregroundStyle(StatusAppearance.foreground(value))
-   .background(StatusAppearance.background(value), in: RoundedRectangle(cornerRadius: 7))
-   .contentShape(Rectangle())
-  }
-  .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel(label)
+  StatusMenuButton(value: value, label: label, choose: choose)
+   .frame(width: 132, height: 48)
 
  }
 }
