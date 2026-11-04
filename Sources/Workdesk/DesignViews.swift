@@ -122,7 +122,7 @@ struct FocusPanel: View {
  private var today: String { let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 · EEEE"; return f.string(from: Date()) }
  var body: some View {
   VStack(alignment: .leading, spacing: 0) {
-   HStack { Text("今日进度").font(.system(size: 15, weight: .semibold)); Spacer(); Text(today).font(.caption).foregroundStyle(.secondary) }.padding(20)
+   HStack { Text("今日进度").font(.system(size: 16, weight: .semibold)); Spacer(); Text(today).font(.caption).foregroundStyle(.secondary) }.padding(20)
    ScrollViewReader { proxy in
     HStack(spacing: 5) {
      Button { moveTabs(-1, proxy) } label: { Image(systemName: "chevron.left") }.help("向左滚动项目")
@@ -142,11 +142,11 @@ struct FocusPanel: View {
    }
    Divider()
    ScrollView {
-    VStack(alignment: .leading, spacing: 22) {
+    VStack(alignment: .leading, spacing: 14) {
      if let project = model.projects.first(where: { $0.id == model.selection }) {
       let tasks = model.projectTasks[project.id] ?? []
       HStack(alignment: .top, spacing: 12) {
-       VStack(alignment: .leading, spacing: 8) { Text(project.title).font(.system(size: 22, weight: .semibold)); Text(project.stage.isEmpty ? "阶段未设置" : project.stage).font(.caption).foregroundStyle(.secondary) }
+       VStack(alignment: .leading, spacing: 6) { Text(project.title).font(.system(size: 21, weight: .semibold)).fixedSize(horizontal: false, vertical: true); Text(project.stage.isEmpty ? "阶段未设置" : project.stage).font(.caption).foregroundStyle(.secondary) }
         .frame(maxWidth: .infinity, alignment: .leading)
        VStack(alignment: .trailing, spacing: 6) {
         Text("项目状态").font(.caption).foregroundStyle(.secondary)
@@ -159,15 +159,15 @@ struct FocusPanel: View {
        Text("\(tasks.filter { $0.status == "完成" }.count) / \(tasks.count) 项完成").font(.caption).foregroundStyle(.secondary).fixedSize()
       }
       ProjectProgress(entries: model.projectProgress[project.id] ?? [])
-      HStack { Text("项目任务").font(.headline); Spacer(); Text("右侧直接切换任务状态").font(.caption).foregroundStyle(.secondary) }
+      HStack { Text("项目任务").font(.system(size: 14, weight: .semibold)); Spacer(); Text("右侧直接切换任务状态").font(.caption).foregroundStyle(.secondary) }
       VStack(spacing: 0) {
        ForEach(tasks) { task in
         HStack(alignment: .top, spacing: 12) {
-         Circle().fill(task.status == "进行中" ? Desk.green : Color.gray.opacity(0.4)).frame(width: 5, height: 5).padding(.top, 10)
-         Text(task.title).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+         Circle().fill(task.status == "进行中" ? Desk.green : Color.gray.opacity(0.4)).frame(width: 5, height: 5).padding(.top, 21.5)
+         Text(task.title).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 14)
          InlineStatus(value: task.status, label: task.title + "：任务状态") { model.update(task, status: $0) }
           .layoutPriority(1)
-        }.padding(.vertical, 15)
+        }.padding(.vertical, 3)
         Divider()
        }
        if tasks.isEmpty { Text("暂无任务").foregroundStyle(.secondary).padding(.vertical, 24) }
@@ -177,7 +177,7 @@ struct FocusPanel: View {
    }
    Divider()
    HStack { Text("已授权 \(model.bindings.count) 个项目映射"); Spacer(); Text("新增事项请交给已接入智能体").foregroundStyle(.secondary) }.font(.system(size: 11)).padding(20).background(Desk.sidebar)
-  }.background(.white).foregroundStyle(Desk.ink).preferredColorScheme(.light)
+  }.font(.system(size: 13.5)).background(.white).foregroundStyle(Desk.ink).preferredColorScheme(.light)
    .alert("操作失败", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("刷新") { model.error = nil; model.perform { await model.reload() } } } message: { Text(model.error ?? "") }
  }
  private func moveTabs(_ delta: Int, _ proxy: ScrollViewProxy) {
@@ -191,7 +191,7 @@ struct InlineStatus: View {
  let choose: (String) -> Void
  var body: some View {
   StatusMenuButton(value: value, label: label, choose: choose)
-   .frame(width: 132, height: 48)
+   .frame(width: 104, height: 48)
 
  }
 }
@@ -201,7 +201,7 @@ struct ProjectProgress: View {
  @State private var expanded = false
  var body: some View {
   VStack(alignment: .leading, spacing: 8) {
-   Text("最近进展").font(.headline)
+   Text("最近进展").font(.system(size: 14, weight: .semibold))
    if let latest = entries.first {
     ProgressEntry(entry: latest)
     if entries.count > 1 {
@@ -226,7 +226,7 @@ private struct ProgressEntry: View {
  let entry: AuditEntry
  var body: some View {
   VStack(alignment: .leading, spacing: 6) {
-   Text(entry.text).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+   Text(entry.text).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
    Text("\(entry.source) · 来源时间 \(entry.occurred)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
   }
  }

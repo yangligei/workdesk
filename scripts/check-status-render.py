@@ -39,7 +39,7 @@ func buttons(_ view: NSView) -> [StatusChoiceButton] { (view as? StatusChoiceBut
 let controls = buttons(host).sorted { $0.convert(.zero, to: host).y < $1.convert(.zero, to: host).y }
 precondition(controls.count == 4)
 for button in controls {
- precondition(button.bounds.size == NSSize(width: 132, height: 48))
+ precondition(button.bounds.size == NSSize(width: 104, height: 48))
  let point = button.convert(NSPoint(x: 8, y: 24), to: host)
  let actual = pixel(point)
  let expected = NSColor(StatusAppearance.background(button.value)).usingColorSpace(.sRGB)!
@@ -68,7 +68,7 @@ let notification = NotificationCenter.default.addObserver(forName: NSMenu.didBeg
  observer.opened += 1
  DispatchQueue.main.async { menu.performActionForItem(at: 1); menu.cancelTracking() }
 }
-for point in [NSPoint(x: 2, y: 24), NSPoint(x: 40, y: 24), NSPoint(x: 130, y: 24), NSPoint(x: 66, y: 2), NSPoint(x: 66, y: 46)] {
+for point in [NSPoint(x: 2, y: 24), NSPoint(x: 40, y: 24), NSPoint(x: 102, y: 24), NSPoint(x: 66, y: 2), NSPoint(x: 66, y: 46)] {
  let inHost = button.convert(point, to: host)
  let hit = host.hitTest(host.convert(inHost, to: host.superview))
  precondition(hit === button, "entire rectangle must hit button: \(point), got \(String(describing: hit)), expected \(button)")
