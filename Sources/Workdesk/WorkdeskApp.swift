@@ -114,28 +114,69 @@ struct TaskBoard: View {
 @MainActor final class FloatingWindow {
  static let shared = FloatingWindow()
  private var panel: NSPanel?
+ func hide() { panel?.orderOut(nil) }
  func show(_ model: Model) {
   if panel == nil {
-   let window = NSPanel(contentRect: NSRect(x: 160, y: 240, width: 360, height: 500), styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
+   let window = NSPanel(contentRect: NSRect(x: 160, y: 240, width: 520, height: 720), styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
    window.title = "Workdesk · 置顶窗"; window.level = .floating
    window.isReleasedWhenClosed = false
-   window.contentMinSize = NSSize(width: 320, height: 360)
+   window.contentMinSize = NSSize(width: 520, height: 420)
    window.contentView = NSHostingView(rootView: FocusPanel(model: model)); panel = window
   }
   panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
  }
 }
-@main struct WorkdeskApp: App {
- @StateObject private var model = Model()
- @Environment(\.openWindow) private var openWindow
- var body: some Scene {
-  Window("Workdesk · 工作进度台", id: "main") { Board(model: model) }.defaultSize(width: 1080, height: 700)
-  MenuBarExtra("工作进度台", systemImage: "checklist") {
-   Text("项目 \(model.projects.count) · 当前任务 \(model.tasks.count)")
-   Button("打开管理窗口") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
-   Button("显示置顶窗") { FloatingWindow.shared.show(model) }
-   Divider()
-   Button("退出 Workdesk") { NSApp.terminate(nil) }.keyboardShortcut("q")
-  }
+@MainActor final class StatusBarController: NSObject, NSApplicationDelegate {
+ let model = Model()
+ private var item: NSStatusItem?
+ private var pending: DispatchWorkItem?
+ private var management: NSWindow?
+ func applicationDidFinishLaunching(_ notification: Notification) {
+  let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+  item.button?.image = NSImage(systemSymbolName: "checklist", accessibilityDescription: "Workdesk：单击置顶窗，双击菜单")
+  item.button?.target = self; item.button?.action = #selector(clicked)
+  item.button?.sendAction(on: [.leftMouseUp])
+  self.item = item
+  FloatingWindow.shared.show(model)
  }
+ func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+  FloatingWindow.shared.show(model)
+  return false
+ }
+ @objc private func clicked() {
+  pending?.cancel(); pending = nil
+  if (NSApp.currentEvent?.clickCount ?? 1) >= 2 { showMenu(); return }
+  // Wait for the system's double-click interval so a double click never flashes the panel.
+  let work = DispatchWorkItem { [weak self] in guard let self else { return }; FloatingWindow.shared.show(self.model) }
+  pending = work
+  DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
+ }
+ private func showMenu() {
+  guard let button = item?.button else { return }
+  let menu = NSMenu()
+  let count = NSMenuItem(title: "项目 \(model.projects.count) · 当前任务 \(model.tasks.count)", action: nil, keyEquivalent: "")
+  menu.addItem(count)
+  for (title, action) in [("打开置顶窗", #selector(showFocus)), ("隐藏置顶窗", #selector(hideFocus)), ("打开管理窗口…", #selector(showManagement)), ("设置与接入…", #selector(showSettings))] {
+   let entry = NSMenuItem(title: title, action: action, keyEquivalent: ""); entry.target = self; menu.addItem(entry)
+  }
+  menu.addItem(.separator())
+  let quit = NSMenuItem(title: "退出 Workdesk", action: #selector(quitApp), keyEquivalent: "q"); quit.target = self; menu.addItem(quit)
+  menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
+ }
+ @objc private func showFocus() { FloatingWindow.shared.show(model) }
+ @objc private func hideFocus() { FloatingWindow.shared.hide() }
+ @objc private func showSettings() { UserDefaults.standard.set("设置与接入", forKey: "boardSection"); showManagement() }
+ @objc private func showManagement() {
+  if management == nil {
+   let window = NSWindow(contentRect: NSRect(x: 180, y: 180, width: 1080, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+   window.title = "Workdesk · 工作进度台"; window.isReleasedWhenClosed = false
+   window.contentView = NSHostingView(rootView: Board(model: model)); management = window
+  }
+  management?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+ }
+ @objc private func quitApp() { NSApp.terminate(nil) }
+}
+@main struct WorkdeskApp: App {
+ @NSApplicationDelegateAdaptor(StatusBarController.self) private var delegate
+ var body: some Scene { Settings { EmptyView() } }
 }

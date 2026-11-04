@@ -3,6 +3,7 @@ import CSQLite
 
 public struct Project: Identifiable, Codable, Sendable {
  public let id: String; public let title: String; public var stage: String = ""; public var version: Int = 1
+ public var status: String = "待办"
  public var deadline: Date? = nil
  public var timeZone: String = TimeZone.current.identifier
  public var reminderHours: [Double] = [24]
@@ -53,7 +54,11 @@ public actor Store {
   if !columns.contains("deadline") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN deadline REAL") }
   if !columns.contains("timezone") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'") }
   if !columns.contains("reminders") { _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN reminders TEXT NOT NULL DEFAULT '[24]'") }
-  _ = try Self.execute(handle, "PRAGMA user_version=3")
+  if !columns.contains("status") {
+   _ = try Self.execute(handle, "ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT '待办'")
+   _ = try Self.execute(handle, "UPDATE projects SET status=CASE WHEN EXISTS(SELECT 1 FROM tasks WHERE project_id=projects.id AND status='阻塞') THEN '阻塞' WHEN EXISTS(SELECT 1 FROM tasks WHERE project_id=projects.id) AND NOT EXISTS(SELECT 1 FROM tasks WHERE project_id=projects.id AND status!='完成') THEN '完成' WHEN EXISTS(SELECT 1 FROM tasks WHERE project_id=projects.id AND status='进行中') THEN '进行中' ELSE '待办' END")
+  }
+  _ = try Self.execute(handle, "PRAGMA user_version=4")
  }
  deinit { sqlite3_close(db) }
  func query(_ sql: String, _ values: [String] = []) throws -> [[String]] { try Self.execute(db, sql, values) }
@@ -80,7 +85,7 @@ public actor Store {
   guard !value.isEmpty else { throw StoreError.invalidTitle }; return value
  }
  public func projects() throws -> [Project] {
-  try query("SELECT id,title,stage,version,deadline,timezone,reminders FROM projects ORDER BY rowid").map { Project(id: $0[0], title: $0[1], stage: $0[2], version: Int($0[3])!, deadline: Double($0[4]).map { Date(timeIntervalSince1970: $0) }, timeZone: $0[5], reminderHours: (try? JSONDecoder().decode([Double].self, from: Data($0[6].utf8))) ?? [24]) }
+  try query("SELECT id,title,stage,version,deadline,timezone,reminders,status FROM projects ORDER BY rowid").map { Project(id: $0[0], title: $0[1], stage: $0[2], version: Int($0[3])!, status: $0[7], deadline: Double($0[4]).map { Date(timeIntervalSince1970: $0) }, timeZone: $0[5], reminderHours: (try? JSONDecoder().decode([Double].self, from: Data($0[6].utf8))) ?? [24]) }
  }
  public func createProject(_ text: String) throws -> Project {
   let item = Project(id: UUID().uuidString, title: try title(text), timeZone: "UTC")
@@ -88,6 +93,11 @@ public actor Store {
  }
  public func updateProject(_ id: String, title text: String, stage: String, expected: Int) throws {
   _ = try query("UPDATE projects SET title=?,stage=?,version=version+1 WHERE id=? AND version=?", [try title(text), stage, id, String(expected)])
+  guard sqlite3_changes(db) == 1 else { throw StoreError.conflict }
+ }
+ public func updateProjectStatus(_ id: String, status: String, expected: Int) throws {
+  guard ["待办", "进行中", "阻塞", "完成"].contains(status) else { throw StoreError.database("无效状态") }
+  _ = try query("UPDATE projects SET status=?,version=version+1 WHERE id=? AND version=?", [status, id, String(expected)])
   guard sqlite3_changes(db) == 1 else { throw StoreError.conflict }
  }
  public func deleteProject(_ id: String) throws { _ = try query("DELETE FROM projects WHERE id=?", [id]) }

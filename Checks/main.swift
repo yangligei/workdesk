@@ -14,6 +14,10 @@ func require(_ value: Bool, _ message: String) throws {
   try await store.updateProject(project.id, title: "编辑项目", stage: "实施", expected: 1)
   let edited = try await store.projects()
   try require(edited[0].stage == "实施" && edited[0].version == 2, "项目阶段编辑失败")
+  try await store.updateProjectStatus(project.id, status: "阻塞", expected: 2)
+  let statusReopened = try Store(root: root)
+  try require(try await statusReopened.projects()[0].status == "阻塞", "独立项目状态未持久化")
+  do { try await store.updateProjectStatus(project.id, status: "完成", expected: 2); throw NSError(domain: "expected conflict", code: 1) } catch StoreError.conflict { }
   let keyFile = root.appendingPathComponent("fixture.key")
   _ = try await store.registerSource("fixture", project: project.id, alias: "demo", tokenFile: keyFile)
   let key = try String(contentsOf: keyFile).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,6 +82,7 @@ func require(_ value: Bool, _ message: String) throws {
   try await store.deleteTask(meetingTasks[0].id)
   let task = try await store.createTask(project.id, title: "原始任务")
   try await store.updateTask(task.id, title: "更新任务", status: "完成", expected: 1)
+  try require(try await store.projects()[0].status == "阻塞", "任务状态覆盖了独立项目状态")
   do { try await store.updateTask(task.id, title: "过期写入", status: "待办", expected: 1); throw NSError(domain: "expected conflict", code: 1) } catch StoreError.conflict { }
   var stale = try signed(ProgressEvent(sourceID: "fixture", projectID: "demo", type: "task.rename", text: "覆盖", taskID: task.id, expectedVersion: 1))
   let conflict = try await store.receive(stale)

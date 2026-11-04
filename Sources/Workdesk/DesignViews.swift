@@ -36,7 +36,7 @@ struct ProjectOverview: View {
  @State private var filter = "全部项目"
  @FocusState private var searching: Bool
  var projects: [Project] { model.projects.filter { project in
-  let status = projectStatus(model.projectTasks[project.id] ?? [])
+  let status = project.status == "完成" ? "已完成" : project.status
   return (query.isEmpty || project.title.localizedCaseInsensitiveContains(query)) && (filter == "全部项目" || (filter == "已完成" ? status == "已完成" : status != "已完成"))
  } }
  var body: some View {
@@ -71,7 +71,7 @@ struct ProjectOverview: View {
          }
         }
         Spacer(minLength: 12)
-        StatusPill(text: projectStatus(tasks))
+        StatusPill(text: project.status)
         Text("\(tasks.filter { $0.status == "完成" }.count) / \(tasks.count) 项完成").font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 92, alignment: .trailing)
         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
        }.padding(.vertical, 25).contentShape(Rectangle())
@@ -97,41 +97,83 @@ struct ProjectChooser: View {
 }
 struct FocusPanel: View {
  @ObservedObject var model: Model
- @State private var collapsed = false
+ @State private var tabPosition = 0
+ private var today: String { let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 · EEEE"; return f.string(from: Date()) }
  var body: some View {
   VStack(alignment: .leading, spacing: 0) {
-   HStack { Text("今日进度").foregroundStyle(.secondary); Spacer(); Button { collapsed.toggle() } label: { Image(systemName: collapsed ? "chevron.down" : "minus") }.buttonStyle(.plain).help(collapsed ? "展开" : "收起") }.padding(20)
-   Divider()
-   ScrollView {
-    VStack(alignment: .leading, spacing: 20) {
-     ProjectChooser(model: model)
-     if let project = model.projects.first(where: { $0.id == model.selection }) {
-      HStack { StatusPill(text: projectStatus(model.tasks)); Spacer(); Text("\(model.tasks.filter { $0.status == "完成" }.count) / \(model.tasks.count) 项完成").font(.caption).foregroundStyle(.secondary) }
-      Text(project.title).font(.system(size: 18, weight: .semibold))
-      if !collapsed {
-       Text(project.stage.isEmpty ? "阶段未设置" : project.stage)
-       if !model.tasks.isEmpty { ProgressView(value: Double(model.tasks.filter { $0.status == "完成" }.count), total: Double(model.tasks.count)).tint(Desk.green) }
-       VStack(alignment: .leading, spacing: 8) { Text("下一步").font(.caption).foregroundStyle(.secondary); Text(model.tasks.first { $0.status != "完成" }?.title ?? "暂无待办") }
-       ProjectProgress(entries: model.projectProgress[project.id] ?? [])
-       Divider()
-       Text("项目待办").font(.caption).foregroundStyle(.secondary)
-       ForEach(model.tasks.filter { $0.status != "完成" }) { task in
-        HStack(alignment: .top, spacing: 12) {
-         Button { model.update(task, status: "完成") } label: { Image(systemName: "square").foregroundStyle(.secondary) }.buttonStyle(.plain).help("标记完成：\(task.title)")
-         Text(task.title).frame(maxWidth: .infinity, alignment: .leading)
-        }; Divider()
+   HStack { Text("今日进度").font(.system(size: 15, weight: .semibold)); Spacer(); Text(today).font(.caption).foregroundStyle(.secondary) }.padding(20)
+   ScrollViewReader { proxy in
+    HStack(spacing: 5) {
+     Button { moveTabs(-1, proxy) } label: { Image(systemName: "chevron.left") }.help("向左滚动项目")
+     ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 6) {
+       ForEach(Array(model.projects.enumerated()), id: \.element.id) { index, project in
+        Button { model.selection = project.id; model.tasks = model.projectTasks[project.id] ?? []; tabPosition = index } label: {
+         Text(project.title).font(.system(size: 13, weight: .medium)).fixedSize().padding(.horizontal, 15).padding(.vertical, 12)
+          .foregroundStyle(model.selection == project.id ? Desk.green : Desk.ink)
+          .background(model.selection == project.id ? Desk.selected : Desk.sidebar, in: RoundedRectangle(cornerRadius: 6))
+        }.id(index).accessibilityLabel("切换项目：" + project.title)
        }
       }
-     } else { Text("还没有项目").font(.headline); Text("在管理窗口创建项目后，这里会显示当前重点。").foregroundStyle(.secondary) }
-    }.padding(22)
+     }
+     Button { moveTabs(1, proxy) } label: { Image(systemName: "chevron.right") }.help("向右滚动项目")
+    }.buttonStyle(.plain).padding(.horizontal, 14).padding(.bottom, 15)
    }
-   if !collapsed {
-    AgentStatus(model: model).padding(20)
+   Divider()
+   ScrollView {
+    VStack(alignment: .leading, spacing: 22) {
+     if let project = model.projects.first(where: { $0.id == model.selection }) {
+      let tasks = model.projectTasks[project.id] ?? []
+      HStack(alignment: .top) {
+       VStack(alignment: .leading, spacing: 8) { Text(project.title).font(.system(size: 22, weight: .semibold)); Text(project.stage.isEmpty ? "阶段未设置" : project.stage).font(.caption).foregroundStyle(.secondary) }
+       Spacer()
+       VStack(alignment: .trailing, spacing: 6) {
+        Text("项目状态").font(.caption).foregroundStyle(.secondary)
+        InlineStatus(value: project.status, label: "项目状态") { value in model.perform { try await model.store?.updateProjectStatus(project.id, status: value, expected: project.version); await model.reload() } }
+       }
+      }
+      HStack(spacing: 12) {
+       ProgressView(value: Double(tasks.filter { $0.status == "完成" }.count), total: Double(max(tasks.count, 1))).tint(Desk.green)
+       Text("\(tasks.filter { $0.status == "完成" }.count) / \(tasks.count) 项完成").font(.caption).foregroundStyle(.secondary).fixedSize()
+      }
+      ProjectProgress(entries: model.projectProgress[project.id] ?? [])
+      HStack { Text("项目任务").font(.headline); Spacer(); Text("右侧直接切换任务状态").font(.caption).foregroundStyle(.secondary) }
+      VStack(spacing: 0) {
+       ForEach(tasks) { task in
+        HStack(alignment: .top, spacing: 12) {
+         Circle().fill(task.status == "进行中" ? Desk.green : Color.gray.opacity(0.4)).frame(width: 5, height: 5).padding(.top, 10)
+         Text(task.title).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+         InlineStatus(value: task.status, label: task.title + "：任务状态") { model.update(task, status: $0) }
+        }.padding(.vertical, 15)
+        Divider()
+       }
+       if tasks.isEmpty { Text("暂无任务").foregroundStyle(.secondary).padding(.vertical, 24) }
+      }
+     } else { Text("还没有项目").font(.headline); Text("请在设置与接入中登记智能体，由智能体创建项目和任务。").foregroundStyle(.secondary) }
+    }.padding(20)
    }
+   Divider()
+   HStack { Text("已授权 \(model.bindings.count) 个项目映射"); Spacer(); Text("新增事项请交给已接入智能体").foregroundStyle(.secondary) }.font(.system(size: 11)).padding(20).background(Desk.sidebar)
   }.background(.white).foregroundStyle(Desk.ink).preferredColorScheme(.light)
-   .alert("操作失败", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("确定") { model.error = nil } } message: { Text(model.error ?? "") }
+   .alert("操作失败", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("刷新") { model.error = nil; model.perform { await model.reload() } } } message: { Text(model.error ?? "") }
  }
-
+ private func moveTabs(_ delta: Int, _ proxy: ScrollViewProxy) {
+  tabPosition = max(0, min(model.projects.count - 1, tabPosition + delta))
+  withAnimation { proxy.scrollTo(tabPosition, anchor: delta > 0 ? .trailing : .leading) }
+ }
+}
+struct InlineStatus: View {
+ let value: String
+ let label: String
+ let choose: (String) -> Void
+ var body: some View {
+  Menu {
+   ForEach(["待办", "进行中", "阻塞", "完成"], id: \.self) { status in
+    Button { choose(status) } label: { if status == value { Label(status, systemImage: "checkmark") } else { Text(status) } }
+   }
+  } label: { HStack(spacing: 10) { Text(value); Image(systemName: "chevron.down").font(.system(size: 8)) }.font(.system(size: 12)).padding(.horizontal, 10).padding(.vertical, 8).background(value == "待办" ? Desk.sidebar : Desk.selected, in: RoundedRectangle(cornerRadius: 4)) }
+   .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().foregroundStyle(Desk.green).accessibilityLabel(label)
+ }
 }
 
 struct ProjectProgress: View {
