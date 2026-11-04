@@ -12,6 +12,8 @@ import WorkdeskCore
  @Published var projectProgress: [String: [AuditEntry]] = [:]
  @Published var bindings: [SourceBinding] = []
  @Published var meetings: [Meeting] = []
+ @Published var archivedTasks: [ArchivedTask] = []
+ @Published var autoArchive = true
  var store: Store?
  var connectionRoot: URL? { root }
  var connectionCredentials: URL {
@@ -46,6 +48,7 @@ import WorkdeskCore
  func reload() async {
   do {
    guard let store else { return }
+   _ = try await store.sweepArchive()
    projects = try await store.projects()
    if !projects.contains(where: { $0.id == selection }) { selection = projects.first?.id }
    var grouped: [String: [WorkTask]] = [:]
@@ -54,6 +57,8 @@ import WorkdeskCore
    for project in projects { progress[project.id] = try await store.projectProgress(project.id) }
    projectProgress = progress
    projectTasks = grouped
+   archivedTasks = try await store.archivedTasks()
+   autoArchive = try await store.autoArchiveEnabled()
    tasks = selection.flatMap { grouped[$0] } ?? []
    audit = try await store.audit(); bindings = try await store.bindings()
    meetings = try await selection.mapAsyncMeetings(store)
@@ -68,6 +73,11 @@ import WorkdeskCore
   guard let id = self.selection else { return }
   try await self.store?.deleteProject(id); await self.reload()
  } }
+ func setAutoArchive(_ enabled: Bool) { perform { try await self.store?.setAutoArchive(enabled); await self.reload() } }
+ func restoreTask(_ task: ArchivedTask) { perform {
+  try await self.store?.restoreTask(task.id, expected: task.version); await self.reload()
+ } }
+ func deleteArchivedTask(_ task: ArchivedTask) { perform { try await self.store?.deleteTask(task.id); await self.reload() } }
 }
 private extension Optional where Wrapped == String {
  func mapAsyncMeetings(_ store: Store) async throws -> [Meeting] {
@@ -131,6 +141,21 @@ struct TaskBoard: View {
    window.isReleasedWhenClosed = false
    window.contentMinSize = NSSize(width: 520, height: 420)
    window.contentView = NSHostingView(rootView: FocusPanel(model: model)); panel = window
+  }
+  panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+ }
+}
+@MainActor final class ArchiveWindow {
+ static let shared = ArchiveWindow()
+ private var panel: NSPanel?
+ func hide() { panel?.orderOut(nil) }
+ func show(_ model: Model) {
+  if panel == nil {
+   let window = NSPanel(contentRect: NSRect(x: 220, y: 180, width: 540, height: 760), styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
+   window.title = "Workdesk · 归档"; window.level = .floating
+   window.isReleasedWhenClosed = false
+   window.contentMinSize = NSSize(width: 480, height: 420)
+   window.contentView = NSHostingView(rootView: ArchiveView(model: model)); panel = window
   }
   panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
  }

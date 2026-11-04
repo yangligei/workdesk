@@ -120,6 +120,16 @@ struct FocusPanel: View {
  @ObservedObject var model: Model
  @State private var tabPosition = 0
  @State private var taskToDelete: WorkTask?
+ /// 归档时间统一按 Asia/Shanghai 显示，「M月d日 HH:mm」。
+ static func archiveTimestamp(_ date: Date) -> String {
+  let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.timeZone = TimeZone(identifier: "Asia/Shanghai"); f.dateFormat = "M月d日 HH:mm"; return f.string(from: date)
+ }
+ static func completedLine(_ task: WorkTask) -> String {
+  guard let completed = task.completedAt else { return "已完成" }
+  let hours = 12 - Date().timeIntervalSince(completed) / 3600
+  let suffix = hours <= 0 ? "即将自动归档" : String(format: "%.0f小时后自动归档", hours.rounded(.up))
+  return "完成于 " + archiveTimestamp(completed) + " · " + suffix
+ }
  private var today: String { let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 · EEEE"; return f.string(from: Date()) }
  var body: some View {
   VStack(alignment: .leading, spacing: 0) {
@@ -160,12 +170,27 @@ struct FocusPanel: View {
        Text("\(tasks.filter { $0.status == "完成" }.count) / \(tasks.count) 项完成").font(.caption).foregroundStyle(.secondary).fixedSize()
       }
       ProjectProgress(entries: model.projectProgress[project.id] ?? [])
-      HStack { Text("项目任务").font(.system(size: 14, weight: .semibold)); Spacer(); Text("右侧直接切换任务状态").font(.caption).foregroundStyle(.secondary) }
+      HStack {
+       Text("项目任务").font(.system(size: 14, weight: .semibold))
+       Spacer()
+       Text("点击状态切换").font(.caption).foregroundStyle(.secondary)
+       Button { ArchiveWindow.shared.show(model) } label: {
+        Text("归档 (\(model.archivedTasks.count))").font(.system(size: 12, weight: .medium))
+         .padding(.horizontal, 12).padding(.vertical, 10)
+         .foregroundStyle(Desk.green).background(Desk.selected, in: RoundedRectangle(cornerRadius: 6))
+         .frame(minHeight: 40).contentShape(Rectangle())
+       }.buttonStyle(.plain).accessibilityLabel("打开归档列表")
+      }
       VStack(spacing: 0) {
        ForEach(tasks) { task in
         HStack(alignment: .top, spacing: 12) {
          Circle().fill(task.status == "进行中" ? Desk.green : Color.gray.opacity(0.4)).frame(width: 5, height: 5).padding(.top, 21.5)
-         Text(task.title).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 14)
+         VStack(alignment: .leading, spacing: 3) {
+          Text(task.title).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true)
+          if task.status == "完成" {
+           Text(Self.completedLine(task)).font(.system(size: 11)).foregroundStyle(.secondary)
+          }
+         }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 14)
          InlineStatus(value: task.status, label: task.title + "：任务状态") { model.update(task, status: $0) }
           .layoutPriority(1)
          Button { taskToDelete = task } label: { Image(systemName: "trash").foregroundStyle(.secondary) }
@@ -178,6 +203,18 @@ struct FocusPanel: View {
      } else { Text("还没有项目").font(.headline); Text("请在设置与接入中登记智能体，由智能体创建项目和任务。").foregroundStyle(.secondary) }
     }.padding(20)
    }
+   Divider()
+   HStack {
+    Text("完成的任务将在12小时后自动归档").font(.system(size: 11)).foregroundStyle(.secondary)
+    Spacer()
+    Button { ArchiveWindow.shared.show(model) } label: {
+     HStack(spacing: 2) {
+      Text("归档设置")
+      Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+     }.font(.system(size: 11, weight: .medium)).foregroundStyle(Desk.green)
+      .padding(.horizontal, 6).padding(.vertical, 9).contentShape(Rectangle())
+    }.buttonStyle(.plain).accessibilityLabel("打开归档设置")
+   }.padding(.horizontal, 20).padding(.vertical, 10)
    Divider()
    HStack { Text("已授权 \(model.bindings.count) 个项目映射"); Spacer(); Text("新增事项请交给已接入智能体").foregroundStyle(.secondary) }.font(.system(size: 11)).padding(20).background(Desk.sidebar)
   }.font(.system(size: 13.5)).background(.white).foregroundStyle(Desk.ink).preferredColorScheme(.light)

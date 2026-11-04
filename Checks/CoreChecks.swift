@@ -154,6 +154,42 @@ func require(_ value: Bool, _ message: String) throws {
   try await store.unbind(source: "bootstrap", alias: "new")
   try require(try await store.receive(creation).outcome == "rejected", "撤销后创建重放绕过授权")
 
+  // 任务自动归档：隔离样例库，覆盖迁移幂等、完成时间、12 小时判定、开关、恢复、删除与版本冲突。
+  let archiveRoot = root.appendingPathComponent("archive-fixture")
+  let archiveStore = try Store(root: archiveRoot)
+  let archiveProject = try await archiveStore.createProject("归档样例")
+  let archiveTask = try await archiveStore.createTask(archiveProject.id, title: "等待归档")
+  try await archiveStore.updateTask(archiveTask.id, title: "等待归档", status: "完成", expected: 1)
+  let completed = try await archiveStore.tasks(archiveProject.id)[0]
+  try require(completed.status == "完成" && completed.completedAt != nil && !completed.archived, "完成未记录时间戳")
+  try require(try await archiveStore.autoArchiveEnabled(), "自动归档默认未开启")
+  let reopenedArchive = try Store(root: archiveRoot)
+  try require(try await reopenedArchive.tasks(archiveProject.id).count == 1, "迁移重开后任务丢失")
+  try require(try await reopenedArchive.tasks(archiveProject.id)[0].completedAt != nil, "迁移后完成时间未持久化")
+  try require(try await archiveStore.sweepArchive(now: completed.completedAt!.addingTimeInterval(11 * 3600)) == 0, "未满 12 小时被误归档")
+  try require(try await archiveStore.sweepArchive(now: completed.completedAt!.addingTimeInterval(13 * 3600)) == 1, "满 12 小时未归档")
+  try require(try await archiveStore.tasks(archiveProject.id).isEmpty, "主列表未排除已归档任务")
+  let listed = try await archiveStore.archivedTasks(archiveProject.id)
+  try require(listed.count == 1 && listed[0].id == archiveTask.id, "归档列表缺失任务")
+  let toggled = try await archiveStore.createTask(archiveProject.id, title: "开关关闭不归档")
+  try await archiveStore.updateTask(toggled.id, title: "开关关闭不归档", status: "完成", expected: 1)
+  let toggledDone = try await archiveStore.tasks(archiveProject.id)[0]
+  try await archiveStore.setAutoArchive(false)
+  try require(!(try await archiveStore.autoArchiveEnabled()), "开关写入未生效")
+  try require(try await archiveStore.sweepArchive(now: toggledDone.completedAt!.addingTimeInterval(48 * 3600)) == 0, "开关关闭仍归档")
+  try require(!(try await Store(root: archiveRoot).autoArchiveEnabled()), "开关未持久化")
+  try await archiveStore.setAutoArchive(true)
+  try require(try await archiveStore.sweepArchive(now: toggledDone.completedAt!.addingTimeInterval(48 * 3600)) == 1, "开关重开后未归档")
+  let archivedList = try await archiveStore.archivedTasks(archiveProject.id)
+  try require(archivedList.count == 2, "归档数量不符")
+  let toRestore = archivedList[0]
+  try await archiveStore.restoreTask(toRestore.id, expected: toRestore.version)
+  let restored = try await archiveStore.tasks(archiveProject.id).first { $0.id == toRestore.id }
+  try require(restored != nil && restored!.status == "待办" && restored!.completedAt == nil && restored!.version == toRestore.version + 1, "恢复未清空时间戳或未递增版本")
+  do { try await archiveStore.restoreTask(toRestore.id, expected: toRestore.version); throw NSError(domain: "expected conflict", code: 1) } catch StoreError.conflict { }
+  try await archiveStore.deleteTask(toRestore.id)
+  try require(try await archiveStore.archivedTasks(archiveProject.id).count == 1, "删除归档任务失败")
+
   // 点击接入引擎只使用隔离目录，检查真实签名回执、撤销与凭据复用。
   let setupRoot = root.appendingPathComponent("setup")
   let setupStore = try Store(root: setupRoot)
