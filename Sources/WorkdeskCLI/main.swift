@@ -8,6 +8,12 @@ import WorkdeskCore
    let root = ProcessInfo.processInfo.environment["WORKDESK_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Workdesk")
    guard let command = args.first else { throw StoreError.database(Self.usage) }
    switch command {
+   case "mcp":
+    let flags = try Self.flags(Array(args.dropFirst()))
+    guard let source = flags["source"], let key = flags["token-file"], Set(flags.keys).isSubset(of: ["source", "token-file", "data-dir"]) else { throw StoreError.database("mcp --source NAME --token-file PATH [--data-dir PATH]") }
+    let mcpRoot = flags["data-dir"].map { URL(fileURLWithPath: $0) } ?? root
+    let server = try MCPServer(root: mcpRoot, source: source, credential: URL(fileURLWithPath: key))
+    await server.run()
    case "enroll":
     let flags = try Self.flags(Array(args.dropFirst()))
     guard let name = flags["name"], let path = flags["token-file"] else { throw StoreError.database("enroll --name NAME --token-file PATH [--project PROJECT_ID --alias ALIAS]") }
@@ -49,7 +55,7 @@ import WorkdeskCore
    }
   } catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(1) }
  }
- static let usage = "WorkdeskCLI enroll --name NAME --token-file PATH [--project ID --alias ALIAS] | grant-create --name NAME --allow yes|no | report --source NAME --alias ALIAS --text TEXT --token-file PATH | submit SIGNED.json | receipt FILE.json | projects | drain"
+ static let usage = "WorkdeskCLI mcp --source NAME --token-file PATH [--data-dir PATH] | enroll --name NAME --token-file PATH [--project ID --alias ALIAS] | grant-create --name NAME --allow yes|no | report --source NAME --alias ALIAS --text TEXT --token-file PATH | submit SIGNED.json | receipt FILE.json | projects | drain"
  static func flags(_ args: [String]) throws -> [String: String] {
   var result: [String: String] = [:]; var index = 0
   while index < args.count {

@@ -12,13 +12,17 @@ public struct ProgressEvent: Codable, Sendable {
  public var text: String
  public var expectedVersion: Int?
  public var signature: String?
+ public var transport: String?
  public init(sourceID: String, projectID: String, type: String, text: String, taskID: String? = nil, expectedVersion: Int? = nil) {
   self.sourceID = sourceID; self.projectID = projectID; self.type = type; self.text = text; self.taskID = taskID; self.expectedVersion = expectedVersion
  }
  /// Stable field framing prevents ambiguous concatenation between signed fields.
  public var signingPayload: Data {
-  Data([String(schemaVersion), sourceID, projectID, taskID ?? "", occurredAt, type, text, expectedVersion.map(String.init) ?? "", eventID].map { "\($0.utf8.count):\($0)" }.joined(separator: "|").utf8)
+  Data([String(schemaVersion), sourceID, projectID, taskID ?? "", occurredAt, type, text, expectedVersion.map(String.init) ?? "", eventID].appendingTransport(transport).map { "\($0.utf8.count):\($0)" }.joined(separator: "|").utf8)
  }
+}
+private extension Array where Element == String {
+ func appendingTransport(_ transport: String?) -> [String] { transport.map { self + ["transport", $0] } ?? self }
 }
 public enum EventSigning {
  public static func sign(_ event: inout ProgressEvent, privateKey: String) throws {
@@ -48,7 +52,10 @@ public extension Store {
   _ = try query("CREATE TABLE IF NOT EXISTS events(source TEXT NOT NULL,id TEXT NOT NULL,project TEXT NOT NULL,occurred TEXT NOT NULL,received TEXT NOT NULL,type TEXT NOT NULL,text TEXT NOT NULL,outcome TEXT NOT NULL,detail TEXT NOT NULL,PRIMARY KEY(source,id))")
  }
  func bind(source: String, alias: String, project: String) throws {
-  try integrationSchema()
+  try mcpSchema()
+  if let old = try query("SELECT project FROM bindings WHERE source=? AND alias=?", [source, alias]).first?.first, old != project {
+   _ = try query("DELETE FROM mcp_grants WHERE source=? AND alias=?", [source, alias])
+  }
   _ = try query("INSERT INTO bindings(source,alias,project) VALUES(?,?,?) ON CONFLICT(source,alias) DO UPDATE SET project=excluded.project", [try title(source), try title(alias), project])
  }
  func bindings() throws -> [SourceBinding] {
@@ -56,7 +63,9 @@ public extension Store {
   return try query("SELECT source,alias,project FROM bindings ORDER BY source,alias").map { SourceBinding(source: $0[0], alias: $0[1], project: $0[2]) }
  }
  func unbind(source: String, alias: String) throws {
-  try integrationSchema(); _ = try query("DELETE FROM bindings WHERE source=? AND alias=?", [source, alias])
+  try mcpSchema()
+  _ = try query("DELETE FROM mcp_grants WHERE source=? AND alias=?", [source, alias])
+  _ = try query("DELETE FROM bindings WHERE source=? AND alias=?", [source, alias])
  }
  func audit() throws -> [AuditEntry] {
   try integrationSchema()
@@ -80,8 +89,19 @@ public extension Store {
     _ = try query("COMMIT")
     return Receipt(eventID: event.eventID, outcome: "rejected", detail: "未授权来源/项目")
    }
-   if let row = try query("SELECT outcome,detail FROM events WHERE source=? AND id=?", [event.sourceID,event.eventID]).first {
-    _ = try query("COMMIT"); return Receipt(eventID: event.eventID, outcome: row[0], detail: row[1])
+   if event.transport != nil {
+    let permission = try mcpPermission(source: event.sourceID, alias: event.projectID)
+    guard event.transport == "mcp", permission != nil, event.type == "progress" || (event.type == "task.create" && permission == true) else {
+     _ = try query("COMMIT")
+     return Receipt(eventID: event.eventID, outcome: "rejected", detail: "MCP 未授权此项目或任务创建操作")
+    }
+   }
+   if let row = try query("SELECT outcome,detail,project,type,text FROM events WHERE source=? AND id=?", [event.sourceID,event.eventID]).first {
+    _ = try query("COMMIT")
+    if event.transport == "mcp", row[2] != mapping || row[3] != event.type || row[4] != event.text {
+     return Receipt(eventID: event.eventID, outcome: "conflict", detail: "event_id 已用于不同操作；未写入")
+    }
+    return Receipt(eventID: event.eventID, outcome: row[0], detail: row[1])
    }
    var outcome = "rejected", detail = "无效事件或未授权来源/项目"
    if event.schemaVersion == 1, !event.eventID.isEmpty, event.eventID.utf8.count <= 128, event.sourceID.utf8.count <= 128, event.text.utf8.count <= 32000, ISO8601DateFormatter().date(from: event.occurredAt) != nil {

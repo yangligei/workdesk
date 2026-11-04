@@ -22,6 +22,7 @@ import WorkdeskCore
  private var root: URL?
  private var inbox: EventInbox?
  private var watcher: InboxWatcher?
+ private var receiptWatcher: InboxWatcher?
  init() {
   do {
    let root = ProcessInfo.processInfo.environment["WORKDESK_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Workdesk")
@@ -31,6 +32,10 @@ import WorkdeskCore
    watcher = try InboxWatcher(root: root) { [weak self] in
     guard let model = self else { return }
     Task { @MainActor in model.perform { try await model.inbox?.drain(); await model.reload() } }
+   }
+   receiptWatcher = try InboxWatcher(root: root, directoryName: "receipts") { [weak self] in
+    guard let model = self else { return }
+    Task { @MainActor in await model.reload() }
    }
    perform { await self.reload() }
   } catch { self.error = error.localizedDescription }
@@ -172,7 +177,7 @@ struct TaskBoard: View {
   // 双指按压触摸板在状态栏按钮上是右键，但状态栏按钮不把右键转成 action，
   // 所以用本地事件监听识别落在图标上的右键。
   installSecondaryClickMonitor()
-  if statusCheck { runStatusCheck() } else { FloatingWindow.shared.show(model) }
+  if statusCheck { runStatusCheck() } else if ProcessInfo.processInfo.environment["WORKDESK_MCP_CHECK"] == "1" { checkMCPConnectionUI(model: model) } else { FloatingWindow.shared.show(model) }
  }
  private var secondaryMonitor: Any?
  private func installSecondaryClickMonitor() {

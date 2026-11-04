@@ -2,7 +2,7 @@
 
 轻量 macOS 菜单栏与置顶悬浮窗，汇总个人任务、智能体进度和会议待办。
 
-状态：原生项目/阶段编辑、原子文件事件收件箱与 CLI、来源映射和事件审计、会议文字证据草稿已实现。QQ 明确未连接。
+状态：原生项目/阶段编辑、原子文件事件收件箱与 CLI、来源映射和事件审计、会议文字证据草稿、本机 stdio MCP 与多工具连接中心已实现。QQ 未验证，第三方 AI 客户端除 Hermes 外未在本机实测。
 
 ## 编译与运行
 
@@ -22,7 +22,9 @@ open dist/Workdesk.app
 
 项目和任务由登记并授权的智能体通过签名协议创建；本机保留改名、阶段、状态和删除操作。日历、截止与提醒流程已撤回，旧数据库字段原样保留。会议文字可生成证据草稿，正式任务由授权智能体发送 draft.confirm 创建。接入步骤见 [事件协议](docs/event-protocol.md)。
 
-当前限制：尚未接入真实智能体/QQ、音频转写或模型；无统一手动操作审计；性能预算尚未按规定数据量与 10 分钟流程验收。可运行 `python3 scripts/check-launch.py` 隔离验证真实 app 和 CLI。
+当前限制：QQ 收发未端到端验证；音频转写与模型未接入；无统一手动操作审计；性能预算尚未按规定数据量与 10 分钟流程验收。MCP 已在 Hermes 真实客户端完成工具发现，Codex、Claude Code、OpenCode、Cursor、Cline、Roo 未在本机实测，WorkBuddy 未接入。可运行 `python3 scripts/check-launch.py` 隔离验证真实 app 和 CLI。
+
+- [多智能体连接中心与 MCP](docs/mcp-connections.md)
 
 - [简要需求](docs/requirements.md)
 - [轻量架构](docs/architecture.md)

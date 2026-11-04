@@ -78,8 +78,8 @@ public actor EventInbox {
 /// Directory notifications plus startup sweep; no timer or resident helper.
 public final class InboxWatcher {
  private let source: DispatchSourceFileSystemObject
- public init(root: URL, changed: @escaping @Sendable () -> Void) throws {
-  let directory = root.appendingPathComponent("inbox")
+ public init(root: URL, directoryName: String = "inbox", changed: @escaping @Sendable () -> Void) throws {
+  let directory = root.appendingPathComponent(directoryName)
   try InboxFiles.directory(directory)
   let fd = open(directory.path, O_EVTONLY | O_NOFOLLOW)
   guard fd >= 0 else { throw StoreError.database("无法监视收件箱") }
