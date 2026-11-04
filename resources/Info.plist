@@ -3,6 +3,7 @@
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>com.workdesk.native</string>
 <key>CFBundleName</key><string>Workdesk</string>
+<key>CFBundleIconFile</key><string>Workdesk</string>
 <key>CFBundleExecutable</key><string>Workdesk</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
