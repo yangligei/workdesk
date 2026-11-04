@@ -9,6 +9,7 @@ import WorkdeskCore
  @Published var selection: String?
  @Published var error: String?
  @Published var audit: [AuditEntry] = []
+ @Published var projectProgress: [String: [AuditEntry]] = [:]
  @Published var bindings: [SourceBinding] = []
  @Published var meetings: [Meeting] = []
  var store: Store?
@@ -38,6 +39,9 @@ import WorkdeskCore
    if !projects.contains(where: { $0.id == selection }) { selection = projects.first?.id }
    var grouped: [String: [WorkTask]] = [:]
    for project in projects { grouped[project.id] = try await store.tasks(project.id) }
+   var progress: [String: [AuditEntry]] = [:]
+   for project in projects { progress[project.id] = try await store.projectProgress(project.id) }
+   projectProgress = progress
    projectTasks = grouped
    tasks = selection.flatMap { grouped[$0] } ?? []
    audit = try await store.audit(); bindings = try await store.bindings()
@@ -80,6 +84,7 @@ struct TaskBoard: View {
    if let project = model.projects.first(where: { $0.id == model.selection }) {
     ProjectEditor(model: model, project: project).id(project.id + String(project.version))
    }
+   if let id = model.selection { ProjectProgress(entries: model.projectProgress[id] ?? []) }
    AgentStatus(model: model)
    ScrollView {
     LazyVStack(spacing: 0) {

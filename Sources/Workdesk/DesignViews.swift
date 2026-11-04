@@ -66,6 +66,9 @@ struct ProjectOverview: View {
          Text(project.title).font(.system(size: 17, weight: .semibold)).foregroundStyle(Desk.ink)
          Text((project.stage.isEmpty ? "阶段未设置" : project.stage) + " → 下一步：" + (tasks.first { $0.status != "完成" }?.title ?? "暂无待办"))
           .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+         if let entry = model.projectProgress[project.id]?.first {
+          Text("最近进展 · " + entry.text).font(.system(size: 13)).foregroundStyle(Desk.green).lineLimit(2).multilineTextAlignment(.leading)
+         }
         }
         Spacer(minLength: 12)
         StatusPill(text: projectStatus(tasks))
@@ -109,6 +112,7 @@ struct FocusPanel: View {
        Text(project.stage.isEmpty ? "阶段未设置" : project.stage)
        if !model.tasks.isEmpty { ProgressView(value: Double(model.tasks.filter { $0.status == "完成" }.count), total: Double(model.tasks.count)).tint(Desk.green) }
        VStack(alignment: .leading, spacing: 8) { Text("下一步").font(.caption).foregroundStyle(.secondary); Text(model.tasks.first { $0.status != "完成" }?.title ?? "暂无待办") }
+       ProjectProgress(entries: model.projectProgress[project.id] ?? [])
        Divider()
        Text("项目待办").font(.caption).foregroundStyle(.secondary)
        ForEach(model.tasks.filter { $0.status != "完成" }) { task in
@@ -130,6 +134,31 @@ struct FocusPanel: View {
 
 }
 
+struct ProjectProgress: View {
+ let entries: [AuditEntry]
+ var body: some View {
+  VStack(alignment: .leading, spacing: 8) {
+   Text("最近进展").font(.headline)
+   if let latest = entries.first {
+    ProgressEntry(entry: latest)
+    if entries.count > 1 {
+     DisclosureGroup("更早进展（\(entries.count - 1) 条）") {
+      ScrollView { VStack(alignment: .leading, spacing: 12) { ForEach(Array(entries.dropFirst())) { ProgressEntry(entry: $0) } } }.frame(maxHeight: 180)
+     }
+    }
+   } else { Text("暂无已接受的进展").foregroundStyle(.secondary) }
+  }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(Desk.wash, in: RoundedRectangle(cornerRadius: 6))
+ }
+}
+private struct ProgressEntry: View {
+ let entry: AuditEntry
+ var body: some View {
+  VStack(alignment: .leading, spacing: 6) {
+   Text(entry.text).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+   Text("\(entry.source) · 来源时间 \(entry.occurred)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+  }
+ }
+}
 struct AgentStatus: View {
  @ObservedObject var model: Model
  var body: some View {

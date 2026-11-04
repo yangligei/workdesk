@@ -62,6 +62,11 @@ public extension Store {
   try integrationSchema()
   return try query("SELECT source,id,project,occurred,received,type,text,outcome FROM events ORDER BY rowid DESC LIMIT 200").map { AuditEntry(id: $0[0]+":"+$0[1], source: $0[0], project: $0[2], occurred: $0[3], received: $0[4], type: $0[5], text: $0[6], outcome: $0[7]) }
  }
+ /// Project-scoped history is independent of the global audit's 200-event window.
+ func projectProgress(_ project: String) throws -> [AuditEntry] {
+  try integrationSchema()
+  return try query("SELECT source,id,project,occurred,received,type,text,outcome FROM events WHERE project=? AND type='progress' AND outcome='accepted' ORDER BY rowid DESC LIMIT 20", [project]).map { AuditEntry(id: $0[0]+":"+$0[1], source: $0[0], project: $0[2], occurred: $0[3], received: $0[4], type: $0[5], text: $0[6], outcome: $0[7]) }
+ }
  func receive(_ event: ProgressEvent) throws -> Receipt {
   try integrationSchema()
   guard let signature = event.signature, try verify(source: event.sourceID, message: event.signingPayload, signature: signature) else {
