@@ -126,10 +126,39 @@ struct TaskBoard: View {
   panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
  }
 }
-@MainActor final class StatusBarController: NSObject, NSApplicationDelegate {
+@MainActor final class StatusBarController: NSObject, NSApplicationDelegate, NSMenuDelegate {
+ private let checkMode: String? = {
+  let args = ProcessInfo.processInfo.arguments
+  if args.contains("--check-status-cg") { return "cg" }
+  if args.contains("--check-status-menu") { return "menu" }
+  if args.contains("--check-status-clicks") { return "clicks" }
+  return nil
+ }()
+ private var statusCheck: Bool { checkMode != nil }
+ private var checkActions = 0
+ private var checkMenus = 0
+ private var checkFocus = 0
+ private var menuClosedEarly = false
+ private var clicks = StatusClickTracker(interval: NSEvent.doubleClickInterval)
+ private var singleTimer: Timer?
+ func menuWillOpen(_ menu: NSMenu) {
+  guard let checkMode else { return }
+  checkMenus += 1
+  guard checkMode == "clicks" else { return }
+  // Scenario runs must not block on a modal menu; cancel it shortly after it opens.
+  let timer = Timer(timeInterval: 0.1, target: self, selector: #selector(cancelScenarioMenu(_:)), userInfo: menu, repeats: false)
+  RunLoop.main.add(timer, forMode: .common)
+ }
+ @objc private func cancelScenarioMenu(_ timer: Timer) {
+  (timer.userInfo as? NSMenu)?.cancelTrackingWithoutAnimation()
+ }
+ func menuDidClose(_ menu: NSMenu) {
+  // In menu mode nothing else cancels it, so a close here means the menu was
+  // dismissed by the click that opened it.
+  if checkMode == "menu" { menuClosedEarly = true }
+ }
  let model = Model()
  private var item: NSStatusItem?
- private var pending: DispatchWorkItem?
  private var management: NSWindow?
  func applicationDidFinishLaunching(_ notification: Notification) {
   let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -138,23 +167,216 @@ struct TaskBoard: View {
   // Handle presses before AppKit's button tracking can consume the matching release.
   item.button?.sendAction(on: [.leftMouseDown])
   self.item = item
-  FloatingWindow.shared.show(model)
+  if statusCheck { runStatusCheck() } else { FloatingWindow.shared.show(model) }
+ }
+ // MARK: status-bar self-checks (only reachable through --check-status-*)
+
+ private func after(_ delay: TimeInterval, _ selector: Selector, _ info: Any? = nil) {
+  let timer = Timer(timeInterval: delay, target: self, selector: selector, userInfo: info, repeats: false)
+  RunLoop.main.add(timer, forMode: .common)
+ }
+
+ /// Send one real press/release pair through the status bar window.
+ private func injectClick(clickCount: Int) {
+  guard let button = item?.button, let window = button.window else { exit(2) }
+  let center = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+  let stamp = ProcessInfo.processInfo.systemUptime
+  for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+   guard let event = NSEvent.mouseEvent(with: type, location: center, modifierFlags: [], timestamp: stamp, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clickCount, pressure: 1) else { continue }
+   window.sendEvent(event)
+  }
+ }
+ @objc private func injectClickTimer(_ timer: Timer) { injectClick(clickCount: (timer.userInfo as? Int) ?? 1) }
+
+ // MARK: menu persistence (real menu, no forced cancel)
+
+ private func runMenuPersistenceCheck() {
+  after(0.3, #selector(menuCheckFirst))
+ }
+ @objc private func menuCheckFirst() {
+  injectClick(clickCount: 1)
+  after(0.12, #selector(menuCheckSecond))
+ }
+ @objc private func menuCheckSecond() {
+  injectClick(clickCount: 1)
+  // A .common-mode Timer still fires while the menu tracks modally.
+  after(0.9, #selector(menuCheckVerify))
+ }
+ @objc private func menuCheckVerify() {
+  let ok = checkMenus == 1 && !menuClosedEarly
+  print("\(ok ? "PASS" : "FAIL"): menu stays open after double click — menus=\(checkMenus) closedEarly=\(menuClosedEarly) attachedMenu=\(item?.menu != nil)")
+  fflush(stdout)
+  exit(ok ? 0 : 1)
+ }
+
+ // MARK: HID-level probe (needs Accessibility permission)
+
+ private var cgPoint = CGPoint.zero
+ private func runCGClickProbe() {
+  after(0.5, #selector(cgBegin))
+ }
+ @objc private func cgBegin() {
+  guard AXIsProcessTrusted() else {
+   // No Accessibility permission for this binary: HID injection is silently
+   // dropped, so report a skip instead of a false failure.
+   print("SKIP: CG double click — Accessibility permission not granted, HID events blocked")
+   fflush(stdout)
+   exit(3)
+  }
+  guard let button = item?.button, let window = button.window else { exit(2) }
+  let local = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+  let screen = window.convertPoint(toScreen: local)
+  let top = NSScreen.screens.first?.frame.maxY ?? 0
+  cgPoint = CGPoint(x: screen.x, y: top - screen.y)
+  print("trusted=\(AXIsProcessTrusted()) point=\(cgPoint)")
+  post(.leftMouseDown, clickState: 1)
+  after(0.05, #selector(cgRelease1))
+ }
+ @objc private func cgRelease1() {
+  post(.leftMouseUp, clickState: 1)
+  after(0.09, #selector(cgSecondDown))
+ }
+ @objc private func cgSecondDown() {
+  post(.leftMouseDown, clickState: 2)
+  after(0.05, #selector(cgRelease2))
+ }
+ @objc private func cgRelease2() {
+  post(.leftMouseUp, clickState: 2)
+  after(1.1, #selector(cgVerify))
+ }
+ private func post(_ type: CGEventType, clickState: Int64) {
+  guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: cgPoint, mouseButton: .left) else { return }
+  event.setIntegerValueField(.mouseEventClickState, value: clickState)
+  event.post(tap: .cghidEventTap)
+ }
+ @objc private func cgVerify() {
+  let ok = checkActions == 2 && checkMenus == 1 && !menuClosedEarly
+  print("\(ok ? "PASS" : "FAIL"): CG double click — actions=\(checkActions) menus=\(checkMenus) closedEarly=\(menuClosedEarly)")
+  fflush(stdout)
+  exit(ok ? 0 : 1)
+ }
+
+ // MARK: click scenarios
+
+ private struct StatusScenario {
+  let name: String
+  let presses: [(delay: TimeInterval, clickCount: Int)]
+  let menus: Int
+  let focus: Int
+ }
+ private var failures: [String] = []
+ private var scenarios: [StatusScenario] = []
+
+ private func runStatusCheck() {
+  if checkMode == "menu" { runMenuPersistenceCheck(); return }
+  if checkMode == "cg" { runCGClickProbe(); return }
+  // Drive the real NSStatusBarWindow with real NSEvents so the button's own
+  // cell/tracking path decides how many actions arrive and with which
+  // currentEvent. Only the "AppKit paired" scenario fabricates clickCount 2.
+  let interval = NSEvent.doubleClickInterval
+  scenarios = [
+   StatusScenario(name: "首次单击", presses: [(0, 1)], menus: 0, focus: 1),
+   StatusScenario(name: "快速双击(clickCount 均为1)", presses: [(0, 1), (0.12, 1)], menus: 1, focus: 0),
+   StatusScenario(name: "快速双击(第二次clickCount=2)", presses: [(0, 1), (0.12, 2)], menus: 1, focus: 0),
+   StatusScenario(name: "间隔超时两次单击", presses: [(0, 1), (interval + 0.35, 1)], menus: 0, focus: 2),
+   StatusScenario(name: "连续三击", presses: [(0, 1), (0.12, 1), (0.24, 1)], menus: 1, focus: 0),
+  ]
+  after(0.3, #selector(scenarioStartTimer(_:)), 0)
+ }
+ @objc private func scenarioStartTimer(_ timer: Timer) { startScenario((timer.userInfo as? Int) ?? 0) }
+ private func startScenario(_ index: Int) {
+  guard index < scenarios.count else {
+   let ok = failures.isEmpty && item?.menu == nil
+   print("\(ok ? "PASS" : "FAIL"): status click scenarios \(scenarios.count) — \(ok ? "ok" : failures.joined(separator: "; "))")
+   fflush(stdout)
+   exit(ok ? 0 : 1)
+  }
+  let scenario = scenarios[index]
+  checkMenus = 0; checkFocus = 0; checkActions = 0
+  clicks.reset(); cancelSingle(); gate.reset()
+  var last: TimeInterval = 0
+  for press in scenario.presses {
+   last = max(last, press.delay)
+   after(0.05 + press.delay, #selector(injectClickTimer(_:)), press.clickCount)
+  }
+  // Settle past the double-click window so a wrongly-held single click would fire.
+  after(0.05 + last + NSEvent.doubleClickInterval + 0.45, #selector(scenarioSettleTimer(_:)), index)
+ }
+ @objc private func scenarioSettleTimer(_ timer: Timer) {
+  let index = (timer.userInfo as? Int) ?? 0
+  let scenario = scenarios[index]
+  if checkMenus != scenario.menus { failures.append("\(scenario.name): 菜单 \(checkMenus) 次，期望 \(scenario.menus)") }
+  if checkFocus != scenario.focus { failures.append("\(scenario.name): 单击动作 \(checkFocus) 次，期望 \(scenario.focus)") }
+  print("  · \(scenario.name): actions=\(checkActions) menus=\(checkMenus) focus=\(checkFocus)")
+  startScenario(index + 1)
  }
  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
   FloatingWindow.shared.show(model)
   return false
  }
  @objc private func clicked() {
-  pending?.cancel(); pending = nil
-  if (NSApp.currentEvent?.clickCount ?? 1) >= 2 { showMenu(); return }
-  // Wait for the system's double-click interval so a double click never flashes the panel.
-  let work = DispatchWorkItem { [weak self] in guard let self else { return }; FloatingWindow.shared.show(self.model) }
-  pending = work
-  DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
+  if statusCheck { checkActions += 1 }
+  let now = ProcessInfo.processInfo.systemUptime
+  switch clicks.press(at: now, clickCount: eventClickCount()) {
+  case .double:
+   cancelSingle()
+   // This action runs on mouse-down. Opening a menu here lets the menu's modal
+   // tracking loop consume the release that belongs to this very click, which
+   // dismisses the menu instantly. Wait for the physical release first.
+   presentMenuAfterRelease()
+  case .pendingSingle:
+   scheduleSingle()
+  case .ignored:
+   break
+  }
+ }
+ private var releaseWaiter: Timer?
+ private var gate = MenuReleaseGate(timeout: 0.35)
+ private func presentMenuAfterRelease() {
+  releaseWaiter?.invalidate()
+  gate.begin(at: ProcessInfo.processInfo.systemUptime)
+  let timer = Timer(timeInterval: 0.008, target: self, selector: #selector(releasePoll), userInfo: nil, repeats: true)
+  RunLoop.main.add(timer, forMode: .common)
+  releaseWaiter = timer
+ }
+ @objc private func releasePoll() {
+  guard gate.shouldPresent(buttonsDown: NSEvent.pressedMouseButtons != 0, at: ProcessInfo.processInfo.systemUptime) else { return }
+  releaseWaiter?.invalidate(); releaseWaiter = nil
+  showMenu()
+ }
+ private func scheduleSingle() {
+  singleTimer?.invalidate()
+  // Target/selector Timer: fires on the main run loop in .common mode, so a
+  // held single click still resolves while a menu or window is tracking.
+  let timer = Timer(timeInterval: clicks.interval, target: self, selector: #selector(singleTimerFired), userInfo: nil, repeats: false)
+  RunLoop.main.add(timer, forMode: .common)
+  singleTimer = timer
+ }
+ @objc private func singleTimerFired() {
+  singleTimer = nil
+  guard clicks.expire(at: ProcessInfo.processInfo.systemUptime) else { return }
+  checkFocus += 1
+  FloatingWindow.shared.show(model)
+ }
+ private func cancelSingle() {
+  singleTimer?.invalidate(); singleTimer = nil
+  clicks.cancel()
+ }
+ /// `NSEvent.clickCount` raises for non-mouse events (status-item actions can be
+ /// delivered from a Kit-defined system event), so only read it for real presses.
+ private func eventClickCount() -> Int {
+  guard let event = NSApp.currentEvent else { return 1 }
+  switch event.type {
+  case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
+   return event.clickCount
+  default:
+   return 1
+  }
  }
  private func showMenu() {
   guard let button = item?.button else { return }
   let menu = NSMenu()
+  menu.delegate = self
   let count = NSMenuItem(title: "项目 \(model.projects.count) · 当前任务 \(model.tasks.count)", action: nil, keyEquivalent: "")
   menu.addItem(count)
   for (title, action) in [("打开置顶窗", #selector(showFocus)), ("隐藏置顶窗", #selector(hideFocus)), ("打开管理窗口…", #selector(showManagement)), ("设置与接入…", #selector(showSettings))] {

@@ -152,6 +152,44 @@ func require(_ value: Bool, _ message: String) throws {
   try require(try await store.receive(bootstrap("project.create", alias: "denied")).outcome == "rejected", "创建许可撤销无效")
   try await store.unbind(source: "bootstrap", alias: "new")
   try require(try await store.receive(creation).outcome == "rejected", "撤销后创建重放绕过授权")
-  print("PASS: authenticated project/task creation, default deny, capability revocation, alias collision, replay, scope isolation, signed draft confirmation, CRUD, inbox, tampering, persistence")
+
+  // 状态栏单击/双击判定：窗口按单调事件时间，而非 event.clickCount。
+  var tracker = StatusClickTracker(interval: 0.5)
+  try require(tracker.press(at: 100, clickCount: 1) == .pendingSingle, "首次按下应暂缓单击")
+  try require(tracker.press(at: 100.12, clickCount: 1) == .double, "窗口内第二次按下应判双击（clickCount 均为 1）")
+  try require(!tracker.expire(at: 100.49), "双击后不应再触发超时单击")
+
+  tracker.reset()
+  try require(tracker.press(at: 200, clickCount: 1) == .pendingSingle, "首次按下应暂缓单击")
+  try require(!tracker.expire(at: 200.2), "窗口内不得提前触发单击")
+  try require(tracker.expire(at: 200.5), "窗口到期应触发单击")
+  try require(!tracker.expire(at: 201), "单击只应触发一次")
+
+  tracker.reset()
+  try require(tracker.press(at: 300, clickCount: 1) == .pendingSingle, "单击应暂缓")
+  try require(tracker.press(at: 300.9, clickCount: 1) == .pendingSingle, "超时的两次按下是两次单击")
+  try require(tracker.expire(at: 301.4), "第二次单击应可超时触发")
+
+  tracker.reset()
+  try require(tracker.press(at: 400, clickCount: 1) == .pendingSingle, "三击首按应暂缓")
+  try require(tracker.press(at: 400.1, clickCount: 1) == .double, "三击第二按应判双击")
+  try require(tracker.press(at: 400.2, clickCount: 1) == .ignored, "三击第三按应被吞掉")
+  try require(!tracker.hasPendingSingle, "连击不应残留待定单击")
+
+  tracker.reset()
+  try require(tracker.press(at: 500, clickCount: 2) == .double, "AppKit 已配对时直接双击")
+  try require(!tracker.hasPendingSingle, "双击不应留下待定单击")
+
+  // 菜单展示门：按下未释放前不得展示，超时后放行。
+  var gate = MenuReleaseGate(timeout: 0.35)
+  try require(!gate.shouldPresent(buttonsDown: true, at: 600), "未 begin 不应展示")
+  gate.begin(at: 600)
+  try require(!gate.shouldPresent(buttonsDown: true, at: 600.2), "按键未释放不应展示菜单")
+  try require(gate.shouldPresent(buttonsDown: false, at: 600.25), "释放后应展示菜单")
+  try require(!gate.shouldPresent(buttonsDown: false, at: 600.3), "菜单只应展示一次")
+  gate.begin(at: 700)
+  try require(gate.shouldPresent(buttonsDown: true, at: 700.36), "超时后应放行，避免菜单永不出现")
+
+  print("PASS: authenticated project/task creation, default deny, capability revocation, alias collision, replay, scope isolation, signed draft confirmation, CRUD, inbox, tampering, persistence, status-bar single/double click timing and menu release gate")
  }
 }
