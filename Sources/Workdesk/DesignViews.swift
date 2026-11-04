@@ -119,6 +119,7 @@ struct ProjectChooser: View {
 struct FocusPanel: View {
  @ObservedObject var model: Model
  @State private var tabPosition = 0
+ @State private var taskToDelete: WorkTask?
  private var today: String { let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 · EEEE"; return f.string(from: Date()) }
  var body: some View {
   VStack(alignment: .leading, spacing: 0) {
@@ -167,6 +168,8 @@ struct FocusPanel: View {
          Text(task.title).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 14)
          InlineStatus(value: task.status, label: task.title + "：任务状态") { model.update(task, status: $0) }
           .layoutPriority(1)
+         Button { taskToDelete = task } label: { Image(systemName: "trash").foregroundStyle(.secondary) }
+          .buttonStyle(.plain).frame(width: 44, height: 48).contentShape(Rectangle()).help("删除任务")
         }.padding(.vertical, 3)
         Divider()
        }
@@ -179,6 +182,10 @@ struct FocusPanel: View {
    HStack { Text("已授权 \(model.bindings.count) 个项目映射"); Spacer(); Text("新增事项请交给已接入智能体").foregroundStyle(.secondary) }.font(.system(size: 11)).padding(20).background(Desk.sidebar)
   }.font(.system(size: 13.5)).background(.white).foregroundStyle(Desk.ink).preferredColorScheme(.light)
    .alert("操作失败", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("刷新") { model.error = nil; model.perform { await model.reload() } } } message: { Text(model.error ?? "") }
+   .confirmationDialog("删除这条任务？", isPresented: Binding(get: { taskToDelete != nil }, set: { if !$0 { taskToDelete = nil } }), titleVisibility: .visible) {
+    Button("删除", role: .destructive) { if let task = taskToDelete { model.deleteTask(task) }; taskToDelete = nil }
+    Button("取消", role: .cancel) { taskToDelete = nil }
+   } message: { Text(taskToDelete?.title ?? "") }
  }
  private func moveTabs(_ delta: Int, _ proxy: ScrollViewProxy) {
   tabPosition = max(0, min(model.projects.count - 1, tabPosition + delta))
