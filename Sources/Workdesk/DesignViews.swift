@@ -19,9 +19,30 @@ struct DeskButton: ButtonStyle {
    .opacity(!enabled ? 0.4 : (configuration.isPressed ? 0.65 : 1))
  }
 }
+enum StatusAppearance {
+ static func symbol(_ value: String) -> String {
+  switch value { case "进行中": return "◐"; case "阻塞": return "!"; case "完成", "已完成": return "✓"; default: return "○" }
+ }
+ static func foreground(_ value: String) -> Color {
+  switch value {
+  case "进行中": return Color(red: 0.14, green: 0.36, blue: 0.56)
+  case "阻塞": return Color(red: 0.62, green: 0.25, blue: 0.15)
+  case "完成", "已完成": return Desk.green
+  default: return Color(red: 0.32, green: 0.36, blue: 0.39)
+  }
+ }
+ static func background(_ value: String) -> Color {
+  switch value {
+  case "进行中": return Color(red: 0.91, green: 0.95, blue: 0.98)
+  case "阻塞": return Color(red: 0.99, green: 0.93, blue: 0.90)
+  case "完成", "已完成": return Color(red: 0.91, green: 0.95, blue: 0.92)
+  default: return Color(red: 0.94, green: 0.945, blue: 0.95)
+  }
+ }
+}
 struct StatusPill: View {
  let text: String
- var body: some View { Text(text).font(.system(size: 12)).padding(.horizontal, 9).padding(.vertical, 5).foregroundStyle(text == "阻塞" ? Color.brown : Desk.green).background(text == "阻塞" ? Color.orange.opacity(0.09) : Desk.selected, in: RoundedRectangle(cornerRadius: 4)) }
+ var body: some View { Text(StatusAppearance.symbol(text) + " " + text).font(.system(size: 12)).padding(.horizontal, 9).padding(.vertical, 5).foregroundStyle(StatusAppearance.foreground(text)).background(StatusAppearance.background(text), in: RoundedRectangle(cornerRadius: 4)) }
 }
 func projectStatus(_ tasks: [WorkTask]) -> String {
  if tasks.isEmpty { return "暂无任务" }
@@ -171,21 +192,43 @@ struct InlineStatus: View {
    ForEach(["待办", "进行中", "阻塞", "完成"], id: \.self) { status in
     Button { choose(status) } label: { if status == value { Label(status, systemImage: "checkmark") } else { Text(status) } }
    }
-  } label: { HStack(spacing: 10) { Text(value); Image(systemName: "chevron.down").font(.system(size: 8)) }.font(.system(size: 12)).padding(.horizontal, 10).padding(.vertical, 8).background(value == "待办" ? Desk.sidebar : Desk.selected, in: RoundedRectangle(cornerRadius: 4)) }
-   .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().foregroundStyle(Desk.green).accessibilityLabel(label)
+  } label: {
+   HStack(spacing: 8) {
+    Text(StatusAppearance.symbol(value) + " " + value)
+    Spacer(minLength: 10)
+    Image(systemName: "chevron.down").font(.system(size: 9))
+   }
+   .font(.system(size: 13, weight: .semibold))
+   .padding(.horizontal, 15).frame(width: 132, height: 48)
+   .foregroundStyle(StatusAppearance.foreground(value))
+   .background(StatusAppearance.background(value), in: RoundedRectangle(cornerRadius: 7))
+   .contentShape(Rectangle())
+  }
+  .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel(label)
+
  }
 }
 
 struct ProjectProgress: View {
  let entries: [AuditEntry]
+ @State private var expanded = false
  var body: some View {
   VStack(alignment: .leading, spacing: 8) {
    Text("最近进展").font(.headline)
    if let latest = entries.first {
     ProgressEntry(entry: latest)
     if entries.count > 1 {
-     DisclosureGroup("更早进展（\(entries.count - 1) 条）") {
-      ScrollView { VStack(alignment: .leading, spacing: 12) { ForEach(Array(entries.dropFirst())) { ProgressEntry(entry: $0) } } }.frame(maxHeight: 180)
+     Button { expanded.toggle() } label: {
+      HStack {
+       Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.caption)
+       Text("更早进展（\(entries.count - 1) 条）").fontWeight(.semibold)
+       Spacer()
+       Text(expanded ? "点击整行收起" : "点击整行展开").font(.caption).foregroundStyle(.secondary)
+      }.frame(maxWidth: .infinity, minHeight: 40).contentShape(Rectangle())
+     }.buttonStyle(.plain).accessibilityValue(expanded ? "已展开" : "已收起")
+     if expanded {
+      Divider()
+      ScrollView { VStack(alignment: .leading, spacing: 12) { ForEach(Array(entries.dropFirst())) { ProgressEntry(entry: $0) } }.frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 180)
      }
     }
    } else { Text("暂无已接受的进展").foregroundStyle(.secondary) }

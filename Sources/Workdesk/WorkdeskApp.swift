@@ -97,9 +97,7 @@ struct TaskBoard: View {
     ForEach(model.tasks) { task in
     HStack(spacing: 14) {
      TaskTitleEditor(model: model, task: task).id(task.id + String(task.version))
-     Picker("状态", selection: Binding(get: { task.status }, set: { model.update(task, status: $0) })) {
-      ForEach(["待办", "进行中", "阻塞", "完成"], id: \.self) { Text($0) }
-     }.labelsHidden().frame(width: 110)
+     InlineStatus(value: task.status, label: task.title + "：任务状态") { model.update(task, status: $0) }
      Button { model.deleteTask(task) } label: { Image(systemName: "trash") }.help("删除任务")
     }.padding(.vertical, 18)
     Divider()
