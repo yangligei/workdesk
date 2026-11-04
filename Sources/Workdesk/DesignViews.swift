@@ -145,12 +145,13 @@ struct FocusPanel: View {
     VStack(alignment: .leading, spacing: 22) {
      if let project = model.projects.first(where: { $0.id == model.selection }) {
       let tasks = model.projectTasks[project.id] ?? []
-      HStack(alignment: .top) {
+      HStack(alignment: .top, spacing: 12) {
        VStack(alignment: .leading, spacing: 8) { Text(project.title).font(.system(size: 22, weight: .semibold)); Text(project.stage.isEmpty ? "阶段未设置" : project.stage).font(.caption).foregroundStyle(.secondary) }
-       Spacer()
+        .frame(maxWidth: .infinity, alignment: .leading)
        VStack(alignment: .trailing, spacing: 6) {
         Text("项目状态").font(.caption).foregroundStyle(.secondary)
         InlineStatus(value: project.status, label: "项目状态") { value in model.perform { try await model.store?.updateProjectStatus(project.id, status: value, expected: project.version); await model.reload() } }
+         .layoutPriority(1)
        }
       }
       HStack(spacing: 12) {
@@ -165,6 +166,7 @@ struct FocusPanel: View {
          Circle().fill(task.status == "进行中" ? Desk.green : Color.gray.opacity(0.4)).frame(width: 5, height: 5).padding(.top, 10)
          Text(task.title).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
          InlineStatus(value: task.status, label: task.title + "：任务状态") { model.update(task, status: $0) }
+          .layoutPriority(1)
         }.padding(.vertical, 15)
         Divider()
        }

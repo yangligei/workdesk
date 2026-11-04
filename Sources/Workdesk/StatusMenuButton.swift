@@ -35,7 +35,7 @@ final class StatusChoiceButton: NSButton {
   NSColor(StatusAppearance.background(value)).setFill()
   NSBezierPath(roundedRect: bounds, xRadius: 7, yRadius: 7).fill()
   let ink = NSColor(StatusAppearance.foreground(value))
-  let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: ink]
+  let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 15, weight: .semibold), .foregroundColor: ink]
   let text = StatusAppearance.symbol(value) + " " + value
   let size = text.size(withAttributes: attributes)
   text.draw(at: NSPoint(x: 15, y: (bounds.height - size.height) / 2), withAttributes: attributes)
