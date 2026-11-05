@@ -31,6 +31,7 @@ public actor EventInbox {
  private let store: Store
  private var draining = false
  private var pending = false
+ private var drainWaiters: [CheckedContinuation<Void, Error>] = []
  public init(root: URL, store: Store) throws {
   self.root = root; self.store = store
   try InboxFiles.directory(root)
@@ -47,12 +48,26 @@ public actor EventInbox {
   return name
  }
  public func drain() async throws {
-  guard !draining else { pending = true; return }
-  draining = true; defer { draining = false }
-  repeat {
-   pending = false
-   try await sweep()
-  } while pending
+  if draining {
+   pending = true
+   try await withCheckedThrowingContinuation { drainWaiters.append($0) }
+   return
+  }
+  draining = true
+  do {
+   repeat {
+    pending = false
+    try await sweep()
+   } while pending
+   draining = false
+   let waiters = drainWaiters; drainWaiters.removeAll()
+   for waiter in waiters { waiter.resume() }
+  } catch {
+   draining = false
+   let waiters = drainWaiters; drainWaiters.removeAll()
+   for waiter in waiters { waiter.resume(throwing: error) }
+   throw error
+  }
  }
  private func sweep() async throws {
   let directory = root.appendingPathComponent("inbox")

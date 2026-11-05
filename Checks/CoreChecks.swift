@@ -7,7 +7,8 @@ func require(_ value: Bool, _ message: String) throws {
 @main struct Checks {
  static func main() async throws {
   try await runMCPChecks()
-  let root = FileManager.default.temporaryDirectory.appendingPathComponent("workdesk-check-\(UUID())")
+  try await runMeetingChecks()
+  let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["TMPDIR"] ?? NSTemporaryDirectory()).appendingPathComponent("workdesk-check-\(UUID())")
   defer { try? FileManager.default.removeItem(at: root) }
   let store = try Store(root: root)
   do { _ = try await store.createProject(" \n "); throw NSError(domain: "expected rejection", code: 1) } catch StoreError.invalidTitle { }

@@ -1,6 +1,7 @@
 import Foundation
 public struct Meeting: Identifiable, Sendable {
  public let id: String; public let text: String; public let version: Int
+ public var originalDate: String = ""
 }
 public struct MeetingDraft: Identifiable, Sendable {
  public let id: String; public let title: String; public let evidence: String; public let line: Int; public let taskID: String
@@ -9,10 +10,27 @@ public extension Store {
  func meetingSchema() throws {
   _ = try query("CREATE TABLE IF NOT EXISTS meetings(id TEXT PRIMARY KEY,project TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,text TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)")
   _ = try query("CREATE TABLE IF NOT EXISTS drafts(id TEXT PRIMARY KEY,meeting TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,title TEXT NOT NULL,evidence TEXT NOT NULL,line INTEGER NOT NULL,task TEXT NOT NULL DEFAULT '')")
+  if try !query("PRAGMA table_info(meetings)").contains(where: { $0[1] == "original_date" }) {
+   _ = try query("ALTER TABLE meetings ADD COLUMN original_date TEXT NOT NULL DEFAULT ''")
+  }
  }
  func meetings(_ project: String) throws -> [Meeting] {
   try meetingSchema()
-  return try query("SELECT id,text,version FROM meetings WHERE project=? ORDER BY rowid DESC", [project]).map { Meeting(id: $0[0], text: $0[1], version: Int($0[2])!) }
+  return try query("SELECT id,text,version,original_date FROM meetings WHERE project=? ORDER BY rowid DESC", [project]).map { Meeting(id: $0[0], text: $0[1], version: Int($0[2])!, originalDate: $0[3]) }
+ }
+ func saveMeetingSource(project: String, text: String, originalDate: String, id: String? = nil, expected: Int? = nil) throws -> Meeting {
+  try meetingSchema()
+  guard text.utf8.count <= 262144 else { throw StoreError.database("会议文字超过 256 KiB") }
+  _ = try title(text)
+  guard originalDate.isEmpty || MeetingAnalysis.date(originalDate) != nil else { throw StoreError.database("会议日期无效") }
+  if let id {
+   guard let row = try query("SELECT version FROM meetings WHERE id=? AND project=?", [id,project]).first, Int(row[0]) == expected else { throw StoreError.conflict }
+   _ = try query("UPDATE meetings SET text=?,version=version+1 WHERE id=?", [text,id])
+   return try meetings(project).first { $0.id == id }!
+  }
+  let id = UUID().uuidString
+  _ = try query("INSERT INTO meetings(id,project,text,original_date) VALUES(?,?,?,?)", [id,project,text,originalDate])
+  return try meetings(project).first { $0.id == id }!
  }
  /// Explicit markers only. No model, inferred owners, dates, or invented timestamps.
  func saveMeeting(project: String, text: String, id: String? = nil, expected: Int? = nil) throws -> String {

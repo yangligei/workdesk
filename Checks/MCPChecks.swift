@@ -2,7 +2,7 @@ import Foundation
 import WorkdeskCore
 
 func runMCPChecks() async throws {
- let root = FileManager.default.temporaryDirectory.appendingPathComponent("workdesk-mcp-check-\(UUID())")
+ let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["TMPDIR"] ?? NSTemporaryDirectory()).appendingPathComponent("workdesk-mcp-check-\(UUID())")
  defer { try? FileManager.default.removeItem(at: root) }
  let store = try Store(root: root)
  let project = try await store.createProject("MCP 可见")

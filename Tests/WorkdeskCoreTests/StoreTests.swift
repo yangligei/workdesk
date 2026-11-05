@@ -2,7 +2,7 @@ import XCTest
 @testable import WorkdeskCore
 final class StoreTests: XCTestCase {
  func testPersistentCRUD() async throws {
-  let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["TMPDIR"] ?? NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
   defer { try? FileManager.default.removeItem(at: root) }
   let store = try Store(root: root)
   let project = try await store.createProject("示例")

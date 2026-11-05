@@ -1,6 +1,6 @@
 # 本地签名事件协议 v1
 
-无网络监听、无常驻服务、不依赖 Hermes 内部模块。真实 Hermes/QQ 未连接；通用适配器仅显式上报调用方提供的文字，不读取日志或聊天。
+无网络监听、无常驻服务、不依赖 Hermes 内部模块。通用适配器仅显式上报调用方提供的文字，不读取日志或聊天；会议识别另经用户授权调用 Hermes 公共单次 CLI，QQ 未自动连接。
 
 ## 登记与使用
 
@@ -28,7 +28,7 @@ JSON camelCase 字段：schemaVersion=1、eventID、sourceID、projectID（绑�
 
 同一 macOS 用户仍可读取文件和修改数据库，不是远程、多租户或同用户恶意进程隔离。只对可信本机调用方提供 CLI。projects / projects.json 包含全部本地项目及截止设置，不是按来源过滤的远程查询，禁止直接转发 QQ。审计存原始事件文本；调用方不要把密钥放入文字。UI 仅展示最近 200 条，底层暂无自动清理。手动操作暂无统一审计。
 
-会议文字仅按显式待办标记生成带行号/时间戳的草稿；正式任务由授权智能体发送 `draft.confirm --task-id DRAFT_ID` 创建，检查草稿所属项目，重复确认幂等；无音频转写或模型。
+旧会议的标记草稿及 `draft.confirm --task-id DRAFT_ID` 保留兼容，检查所属项目并幂等确认。新会议收件箱支持普通转写文字，通过已安装的 Hermes 公共单次 CLI 生成带逐字证据的审核草稿；用户确认后使用当前来源与现有 MCP 权限签名提交 task.create/progress。没有音频转写或自动新项目，详见 [会议 AI 审核](meeting-ai.md)。
 
 ## 从空工作台接入
 
@@ -53,4 +53,4 @@ JSON camelCase 字段：schemaVersion=1、eventID、sourceID、projectID（绑�
 
 创建许可仅允许使用未占用别名创建项目，不允许覆盖已有映射，也不授予其他项目任务权限。相同事件 ID 重试返回原回执，不重复创建。CLI `--event-id` 允许调用方固定重试标识；修改操作使用新 ID。`task.rename` 还需 `--task-id ID --expected-version N`。本机用户可用 `grant-create --name local-agent --allow no` 撤销创建许可，UI 撤销单项目映射。智能体不能通过事件自行授权。CLI 管理命令仅供可信本机用户，不应作为远程代理能力暴露。
 
-界面不再手动创建项目、任务或将草稿变为正式任务。日历、截止编辑和提醒流程已撤回；旧数据库的 deadline/timezone/reminders 数据原样保留，不删除列、记录或降 schema 版本。应用不再安排提醒。真实 Hermes/QQ 未自动接入，调用方必须明确配置上述 CLI 命令。
+界面不手动创建项目、任务；会议 AI 只审核真实智能体建议，再经显式本机确认和已授权的签名协议入库。日历、截止编辑和提醒流程已撤回；旧数据库的 deadline/timezone/reminders 数据原样保留，不删除列、记录或降 schema 版本。应用不再安排提醒。QQ 未自动接入，调用方必须明确配置上述 CLI 命令。

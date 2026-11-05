@@ -16,6 +16,7 @@ struct DeskButton: ButtonStyle {
   configuration.label.font(.system(size: 13, weight: .medium)).padding(.horizontal, 16).padding(.vertical, 10)
    .foregroundStyle(primary ? .white : Desk.green)
    .background(primary ? Desk.green : Desk.wash, in: RoundedRectangle(cornerRadius: 6))
+   .contentShape(Rectangle())
    .opacity(!enabled ? 0.4 : (configuration.isPressed ? 0.65 : 1))
  }
 }
