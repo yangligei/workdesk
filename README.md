@@ -26,6 +26,7 @@ open dist/Workdesk.app
 
 当前限制：QQ 不自动接通，需按使用环境独立验证；无音频转写，会议识别依赖兼容的已安装 Hermes 与既有模型配置；自动归档在启动或数据刷新时检查，无到点后台定时器；无统一手动操作审计；性能预算尚未按规定数据量与 10 分钟流程验收。MCP 已在 Hermes 真实客户端完成工具发现，Codex、Claude Code、OpenCode、Cursor、Cline、Roo 未在本机实测，WorkBuddy 未接入。可运行 `python3 scripts/check-launch.py` 隔离验证真实 app 和 CLI。
 
+- [外部智能体接入操作指南（含可复制提示词）](docs/agent-integration-guide.md)
 - [多智能体连接中心与 MCP](docs/mcp-connections.md)
 
 - [简要需求](docs/requirements.md)
