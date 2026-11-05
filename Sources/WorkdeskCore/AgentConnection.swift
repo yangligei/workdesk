@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 public struct LocalAgent: Identifiable, Sendable {
  public var id: String { name }
@@ -45,8 +46,11 @@ public extension Store {
  func localAgents(credentials: URL) throws -> [LocalAgent] {
   try integrationSchema()
   _ = try query("CREATE TABLE IF NOT EXISTS sources(source TEXT PRIMARY KEY,token_hash TEXT NOT NULL,created TEXT NOT NULL,last_seen TEXT)")
-  return try query("SELECT source FROM sources ORDER BY source").map { row in
-   LocalAgent(name: row[0], credentialAvailable: FileManager.default.fileExists(atPath: credentials.appendingPathComponent(row[0] + ".key").path))
+  return try query("SELECT source,token_hash FROM sources ORDER BY source").map { row in
+   let file = credentials.appendingPathComponent(row[0] + ".key")
+   let encoded = (try? String(contentsOf: file))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+   let key = Data(base64Encoded: encoded).flatMap { try? Curve25519.Signing.PrivateKey(rawRepresentation: $0) }
+   return LocalAgent(name: row[0], credentialAvailable: key?.publicKey.rawRepresentation.base64EncodedString() == row[1])
   }
  }
  func authorizeLocalProject(source: String, project: String, credentials: URL) throws {
@@ -55,6 +59,20 @@ public extension Store {
    throw StoreError.database("同名映射已用于其他项目，请先在高级设置检查并撤销")
   }
   try bind(source: source, alias: project, project: project)
+ }
+ /// User-click only; skip both registered and leftover credential names instead of rotating keys.
+ func createAvailableLocalIdentity(credentials: URL) throws -> String {
+  let names = Set(try localAgents(credentials: credentials).map(\.name))
+  var index = 1
+  while true {
+   let name = index == 1 ? "local-agent" : "local-agent-\(index)"
+   let file = credentials.appendingPathComponent(name + ".key")
+   if !names.contains(name), !FileManager.default.fileExists(atPath: file.path) {
+    _ = try registerSource(name, tokenFile: file)
+    return name
+   }
+   index += 1
+  }
  }
  /// This entry point never replaces an existing identity or credential.
  func createLocalIdentity(credentials: URL) throws {

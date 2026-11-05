@@ -50,6 +50,7 @@ public extension Store {
   _ = try query("CREATE TABLE IF NOT EXISTS source_capabilities(source TEXT PRIMARY KEY,create_projects INTEGER NOT NULL DEFAULT 0)")
   _ = try query("CREATE TABLE IF NOT EXISTS bindings(source TEXT NOT NULL,alias TEXT NOT NULL,project TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,PRIMARY KEY(source,alias))")
   _ = try query("CREATE TABLE IF NOT EXISTS events(source TEXT NOT NULL,id TEXT NOT NULL,project TEXT NOT NULL,occurred TEXT NOT NULL,received TEXT NOT NULL,type TEXT NOT NULL,text TEXT NOT NULL,outcome TEXT NOT NULL,detail TEXT NOT NULL,PRIMARY KEY(source,id))")
+  _ = try query("CREATE TABLE IF NOT EXISTS event_requests(source TEXT NOT NULL,id TEXT NOT NULL,alias TEXT NOT NULL,type TEXT NOT NULL,text TEXT NOT NULL,transport TEXT NOT NULL,PRIMARY KEY(source,id))")
  }
  func bind(source: String, alias: String, project: String) throws {
   try mcpSchema()
@@ -89,16 +90,24 @@ public extension Store {
     _ = try query("COMMIT")
     return Receipt(eventID: event.eventID, outcome: "rejected", detail: "未授权来源/项目")
    }
+   let creationTasks = try event.transport == "mcp" ? mcpCreationPermission(source: event.sourceID) : nil
+   if event.type == "project.create", !mayCreate || (event.transport == "mcp" && creationTasks == nil) {
+    _ = try query("COMMIT")
+    return Receipt(eventID: event.eventID, outcome: "rejected", detail: "未授权创建新项目，请在本机连接中心授权")
+   }
    if event.transport != nil {
     let permission = try mcpPermission(source: event.sourceID, alias: event.projectID)
-    guard event.transport == "mcp", permission != nil, event.type == "progress" || (event.type == "task.create" && permission == true) else {
+    let creating = event.type == "project.create" && mayCreate && creationTasks != nil && (mapping == nil || permission != nil)
+    guard event.transport == "mcp", creating || (permission != nil && (event.type == "progress" || (event.type == "task.create" && permission == true))) else {
      _ = try query("COMMIT")
      return Receipt(eventID: event.eventID, outcome: "rejected", detail: "MCP 未授权此项目或任务创建操作")
     }
    }
    if let row = try query("SELECT outcome,detail,project,type,text FROM events WHERE source=? AND id=?", [event.sourceID,event.eventID]).first {
+    let request = try query("SELECT alias,type,text,transport FROM event_requests WHERE source=? AND id=?", [event.sourceID,event.eventID]).first
+    let changed = request.map { $0 != [event.projectID, event.type, event.text, event.transport ?? ""] } ?? (row[2] != mapping || row[3] != event.type || row[4] != event.text)
     _ = try query("COMMIT")
-    if event.transport == "mcp", row[2] != mapping || row[3] != event.type || row[4] != event.text {
+    if event.transport == "mcp", changed || (row[0] == "accepted" && row[2] != mapping) {
      return Receipt(eventID: event.eventID, outcome: "conflict", detail: "event_id 已用于不同操作；未写入")
     }
     return Receipt(eventID: event.eventID, outcome: row[0], detail: row[1])
@@ -108,9 +117,10 @@ public extension Store {
     let project = mapping ?? ""
     switch event.type {
     case "project.create":
-     if mayCreate, mapping == nil, !event.projectID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !event.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+     if mayCreate, mapping == nil, !event.projectID.isEmpty, event.projectID == event.projectID.trimmingCharacters(in: .whitespacesAndNewlines), event.projectID.utf8.count <= 128, !event.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       let created = try createProject(event.text)
       try bind(source: event.sourceID, alias: event.projectID, project: created.id)
+      if let creationTasks { try setMCPPermission(source: event.sourceID, alias: event.projectID, enabled: true, createTasks: creationTasks) }
       outcome = "accepted"; detail = created.id
      } else { detail = "项目别名已占用或缺少创建许可" }
     case "draft.confirm":
@@ -140,6 +150,7 @@ public extension Store {
     default: detail = "不支持的类型；任务完成须本地确认"
     }
    }
+   _ = try query("INSERT INTO event_requests(source,id,alias,type,text,transport) VALUES(?,?,?,?,?,?)", [event.sourceID,event.eventID,event.projectID,event.type,event.text,event.transport ?? ""])
    _ = try query("INSERT INTO events(source,id,project,occurred,received,type,text,outcome,detail) VALUES(?,?,?,?,?,?,?,?,?)", [event.sourceID,event.eventID,mapping ?? (outcome == "accepted" ? detail : ""),event.occurredAt,ISO8601DateFormatter().string(from: Date()),event.type,event.text,outcome,detail])
    _ = try query("COMMIT")
    return Receipt(eventID: event.eventID, outcome: outcome, detail: detail)

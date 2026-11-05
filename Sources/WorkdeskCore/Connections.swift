@@ -167,7 +167,7 @@ public struct ConnectionPlan: Sendable {
   guard !process.isRunning else { process.terminate(); throw StoreError.database("MCP 检查超时") }
   let responses = frames
   guard process.terminationStatus == 0, responses.count == 3, responses[0]["result"] != nil,
-        let tools = (responses[1]["result"] as? [String: Any])?["tools"] as? [[String: Any]], tools.count == 3,
+        let tools = (responses[1]["result"] as? [String: Any])?["tools"] as? [[String: Any]], tools.count == 4,
         let content = (responses[2]["result"] as? [String: Any])?["content"] as? [[String: Any]], let text = content.first?["text"] as? String else { throw StoreError.database("MCP 握手或工具检查失败") }
   let receipt = try JSONDecoder().decode(Receipt.self, from: Data(text.utf8))
   guard receipt.eventID == eventID else { throw StoreError.database("MCP 回执不匹配") }

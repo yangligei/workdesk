@@ -32,7 +32,7 @@ func runMCPChecks() async throws {
  let notification = await server.respond(Data("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}".utf8))
  try require(notification == nil, "notification generated response")
  let tools = try await request("tools/list")["result"] as? [String: Any]
- try require((tools?["tools"] as? [Any])?.count == 3, "unexpected tool surface")
+ try require((tools?["tools"] as? [Any])?.count == 4, "unexpected tool surface")
  try require(try await (inner(call("workdesk_projects")) as? [Any])?.count == 0, "binding alone authorized MCP")
  try await store.setMCPPermission(source: "fixture", alias: "demo", enabled: true)
  let visible = try await inner(call("workdesk_projects")) as? [[String: Any]]
@@ -91,6 +91,7 @@ func runMCPChecks() async throws {
   try require(try Data(contentsOf: path) == original, "undo failed to restore original")
  }
  try await store.setMCPPermission(source: "fixture", alias: "demo", enabled: true)
+ try await runMCPCreationChecks(cli: cli)
  let probe = ConnectionPlan(client: .generic, cli: cli, root: root, source: "fixture", credential: key)
  try require(try probe.probe(alias: "demo").outcome == "accepted", "real stdio subprocess probe failed")
  print("PASS: MCP handshake, scoped projects, signed accepted progress/UI query, task permissions, deduplication, revocation, invalid input, private-key non-disclosure, isolated configuration backup/undo, real stdio subprocess")

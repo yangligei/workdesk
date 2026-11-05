@@ -5,7 +5,13 @@ struct AgentSetupView: View {
  @ObservedObject var model: Model
  @State private var discovery: HermesDiscovery?
  @State private var agents: [LocalAgent] = []
- @State private var source = "local-agent"
+ @State private var source = ""
+ @State private var allowProjects = false
+ @State private var allowTasks = false
+ @State private var includeProject = true
+ @State private var creationPermission: Bool?
+ @State private var authorizationRevision = 0
+ @State private var loadingPermission = true
  @State private var busy = false
  @State private var result = ""
  private var credentials: URL { model.connectionCredentials }
@@ -13,36 +19,50 @@ struct AgentSetupView: View {
  var body: some View {
   VStack(alignment: .leading, spacing: 12) {
    Text("智能体连接中心").font(.title2).bold()
-   Text("选择工具、绑定项目，再验证真实回执。智能体需主动上报，任务完成仍由你确认。").foregroundStyle(.secondary)
-   Text("1 · 选择身份与项目").font(.headline)
+   Text("首次选择身份与权限并授权，之后可持续使用；客户端配置仍需你确认。任务完成仍由你确认。").font(.system(size: 13.5)).foregroundStyle(.secondary)
+   Text("1 · 首次授权与权限管理").font(.headline)
    if agents.isEmpty { Text("尚无已登记身份，点击下方按钮创建。无需填写密钥。") }
    else {
     Picker("已有智能体身份", selection: $source) {
      ForEach(agents) { agent in Text(agent.name + (agent.credentialAvailable ? " · 凭据可用" : " · 凭据不在默认位置")).tag(agent.name) }
     }
    }
-   Button("创建本机身份 local-agent") {
+   Button("创建新的本机身份") {
     run {
      guard let store = model.store else { return }
-     try await store.createLocalIdentity(credentials: credentials)
-     agents = try await store.localAgents(credentials: credentials); source = "local-agent"
-     result = "本机身份已登记，请选择项目并授权。"
+     source = try await store.createAvailableLocalIdentity(credentials: credentials)
+     agents = try await store.localAgents(credentials: credentials)
+     result = "本机身份已登记。请勾选权限并点击授权。"
     }
-   }.disabled(busy || agents.contains { $0.name == "local-agent" })
+   }.disabled(busy)
    ProjectChooser(model: model)
-   Text("项目绑定：" + (binding == nil ? "未授权当前项目" : "已绑定当前项目"))
-   Button("授权所选身份接入当前项目") {
-    run {
-     guard let project = model.selection, let store = model.store else { return }
-     try await store.authorizeLocalProject(source: source, project: project, credentials: credentials)
-     await model.reload(); result = "已绑定当前项目。继续选择工具并授予 MCP 访问。"
-    }
-   }.disabled(busy || model.selection == nil || binding != nil || !agents.contains { $0.name == source })
-   Text("同一身份可被多个客户端复用，它们共享该身份的授权范围。发现工具不会自动授权。撤销绑定后 MCP 许可一并清除。").font(.caption).foregroundStyle(.secondary)
+   MCPAuthorizationOptions(allowProjects: $allowProjects, allowTasks: $allowTasks, includeProject: $includeProject, hasProject: model.selection != nil)
+    .disabled(busy || loadingPermission)
+   Text("新项目权限：" + (creationPermission == nil ? "未授权" : creationPermission == true ? "允许创建，且可在新项目创建待办" : "允许创建，仅可上报动态"))
+    .font(.system(size: 11)).foregroundStyle(.secondary)
+   HStack {
+    Button("授权所选范围并记住") {
+     run {
+      guard let store = model.store else { return }
+      try await store.authorizeMCP(source: source, project: includeProject ? model.selection : nil, createProjects: allowProjects, createTasks: allowTasks, credentials: credentials)
+      creationPermission = allowProjects ? allowTasks : nil
+      authorizationRevision += 1
+      await model.reload(); result = "授权已保存。以后在此范围内无需重复授权；继续配置客户端。"
+     }
+    }.frame(minHeight: 48).disabled(busy || loadingPermission || !agents.contains { $0.name == source && $0.credentialAvailable })
+    Button("撤销创建新项目权限") {
+     run {
+      guard let store = model.store else { return }
+      try await store.setMCPCreationPermission(source: source, enabled: false)
+      creationPermission = nil; allowProjects = false; result = "已撤销创建新项目权限。已授权项目可在下方单独撤销。"
+     }
+    }.frame(minHeight: 48).disabled(busy || creationPermission == nil)
+   }
+   Text("同一身份的客户端共享权限。创建新项目默认关闭；已授权项目互相独立。此授权仅适用于 Workdesk，不授予任意文件访问或任务完成能力。身份失效时请选择有效身份并重新导出配置，不要恢复旧密钥。").font(.system(size: 11)).foregroundStyle(.secondary)
    Divider()
    if let root = model.connectionRoot {
     MCPConnectionView(model: model, source: source, binding: binding, root: root, credentials: credentials)
-     .id(source + ":" + (binding?.id ?? "unbound") + ":" + (model.selection ?? ""))
+     .id(source + ":" + (binding?.id ?? "unbound") + ":" + (model.selection ?? "") + ":" + String(authorizationRevision))
    }
    if busy { ProgressView().controlSize(.small) }
    if !result.isEmpty { Text(result).font(.caption).textSelection(.enabled) }
@@ -64,6 +84,18 @@ struct AgentSetupView: View {
    }
   }.padding(16).background(Desk.wash, in: RoundedRectangle(cornerRadius: 8))
    .task { run { if let store = model.store { agents = try await store.localAgents(credentials: credentials) }; if !agents.contains(where: { $0.name == source }), let first = agents.first { source = first.name } } }
+   .task(id: source + ":" + (model.selection ?? "")) {
+    loadingPermission = true
+    defer { loadingPermission = false }
+    do {
+     if let store = model.store {
+      creationPermission = try await store.mcpCreationPermission(source: source)
+      allowProjects = creationPermission != nil
+      let currentTasks: Bool? = if let binding { try await store.mcpPermission(source: source, alias: binding.alias) } else { nil }
+      allowTasks = creationPermission ?? currentTasks ?? false
+     }
+    } catch { result = "读取权限失败：" + error.localizedDescription }
+   }
    .onChange(of: source) { _ in result = "" }
    .onChange(of: model.selection) { _ in result = "" }
  }
@@ -144,7 +176,7 @@ struct MCPConnectionView: View {
      }
     }.disabled(busy || permission == nil)
    }
-   Text("不授予创建项目、完成任务、修改状态或自行授权的能力。").font(.caption).foregroundStyle(.secondary)
+   Text("当前项目授权不改变全局创建新项目权限，也不允许完成任务、修改状态或自行授权。").font(.caption).foregroundStyle(.secondary)
    Divider()
    Text("4 · 验证真实 MCP 写入").font(.headline)
    Button("运行 MCP 握手并写入测试动态") {

@@ -11,6 +11,7 @@
 要求 macOS 13+、Swift 5.9+。无第三方运行时依赖，使用系统 SQLite。
 
 ```sh
+swift build # 同时更新检查会启动的 WorkdeskCLI 子进程
 swift run CoreChecks
 bash scripts/build-app.sh
 open dist/Workdesk.app

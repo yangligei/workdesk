@@ -5,7 +5,8 @@ Workdesk 内置一个本机 stdio MCP 服务（`WorkdeskCLI mcp`），让 Hermes
 ## 已验证能力
 
 - MCP 生命周期：`initialize` / `notifications/initialized` / `tools/list` / `tools/call`，逐行 JSON-RPC（MCP 2025-11-25 标准）。
-- 工具面固定为三个：
+- 工具面固定为四个：
+  - `workdesk_project_create`：输入 alias、title、稳定 event_id；仅在本机允许创建新项目后创建、绑定并继承首次选择的待办权限。
   - `workdesk_projects`：只返回当前身份经本机授予 MCP 的项目；绑定项目本身不等于授权。
   - `workdesk_progress`：签名后写入项目动态，返回 `accepted|rejected|conflict` 真实回执；只记录，不改变任务状态。
   - `workdesk_task_create`：仅在“另外允许创建待办任务”时可用；不能完成任务、改状态或创建项目。
@@ -18,7 +19,7 @@ Workdesk 内置一个本机 stdio MCP 服务（`WorkdeskCLI mcp`），让 Hermes
 
 | 客户端 | 配置方式 | 本机实测 |
 |---|---|---|
-| Hermes | 官方 `hermes mcp add`，可撤销 | 已用真实 Hermes MCP 客户端连接，3 个工具发现成功 |
+| Hermes | 官方 `hermes mcp add`，可撤销 | 历史版本真实客户端发现 3 工具；本版本 4 工具已用隔离 stdio 验证，客户端会话需刷新 |
 | Codex | 官方 `codex mcp add`（`~/.codex/config.toml`） | 本机未安装，未实测 |
 | Claude Code | 官方 `claude mcp add`（用户级 `~/.claude.json`） | 本机未安装，未实测 |
 | OpenCode | 写入全局 `~/.config/opencode/opencode.json` 的 `mcp` 字段 | 本机未安装，未实测 |

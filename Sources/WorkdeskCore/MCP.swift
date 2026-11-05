@@ -12,6 +12,41 @@ public extension Store {
  func mcpSchema() throws {
   try integrationSchema()
   _ = try query("CREATE TABLE IF NOT EXISTS mcp_grants(source TEXT NOT NULL,alias TEXT NOT NULL,create_tasks INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(source,alias))")
+  _ = try query("CREATE TABLE IF NOT EXISTS mcp_creation_grants(source TEXT PRIMARY KEY,create_tasks INTEGER NOT NULL DEFAULT 0)")
+ }
+ /// A local user action persists the optional new-project scope; never exposed as an MCP tool.
+ func setMCPCreationPermission(source: String, enabled: Bool, createTasks: Bool = false) throws {
+  try mcpSchema()
+  _ = try query("BEGIN IMMEDIATE")
+  do {
+   try setProjectCreationPermission(source: source, allowed: enabled)
+   if enabled {
+    _ = try query("INSERT INTO mcp_creation_grants(source,create_tasks) VALUES(?,?) ON CONFLICT(source) DO UPDATE SET create_tasks=excluded.create_tasks", [source, createTasks ? "1" : "0"])
+   } else { _ = try query("DELETE FROM mcp_creation_grants WHERE source=?", [source]) }
+   _ = try query("COMMIT")
+  } catch { _ = try? query("ROLLBACK"); throw error }
+ }
+ func mcpCreationPermission(source: String) throws -> Bool? {
+  try mcpSchema()
+  return try query("SELECT g.create_tasks FROM mcp_creation_grants g JOIN source_capabilities c ON c.source=g.source WHERE g.source=? AND c.create_projects=1", [source]).first.map { $0[0] == "1" }
+ }
+ /// Bind an optional existing project and persist all selected scopes atomically.
+ func authorizeMCP(source: String, project: String?, createProjects: Bool, createTasks: Bool, credentials: URL) throws {
+  try mcpSchema()
+  guard try localAgents(credentials: credentials).contains(where: { $0.name == source && $0.credentialAvailable }) else { throw StoreError.database("身份或凭据不可用，请重新选择现有身份") }
+  _ = try query("BEGIN IMMEDIATE")
+  do {
+   try setProjectCreationPermission(source: source, allowed: createProjects)
+   if createProjects {
+    _ = try query("INSERT INTO mcp_creation_grants(source,create_tasks) VALUES(?,?) ON CONFLICT(source) DO UPDATE SET create_tasks=excluded.create_tasks", [source, createTasks ? "1" : "0"])
+   } else { _ = try query("DELETE FROM mcp_creation_grants WHERE source=?", [source]) }
+   if let project {
+    let alias = try bindings().first(where: { $0.source == source && $0.project == project })?.alias ?? project
+    if alias == project { try authorizeLocalProject(source: source, project: project, credentials: credentials) }
+    try setMCPPermission(source: source, alias: alias, enabled: true, createTasks: createTasks)
+   }
+   _ = try query("COMMIT")
+  } catch { _ = try? query("ROLLBACK"); throw error }
  }
  /// Only local UI calls this; no MCP tool can enroll, bind or grant.
  func setMCPPermission(source: String, alias: String, enabled: Bool, createTasks: Bool = false) throws {
@@ -84,9 +119,11 @@ public final class MCPServer {
      guard arguments.isEmpty else { return failure(id, -32602, "No arguments expected") }
      content = try JSONEncoder().encode(await store.mcpProjects(proof: signed(alias: "", type: "progress", text: "identity proof")))
     } else {
-     guard Set(arguments.keys) == Set(["alias", "text", "event_id"]), let alias = arguments["alias"] as? String, let text = arguments["text"] as? String, let eventID = arguments["event_id"] as? String,
-           !alias.isEmpty, alias.utf8.count <= 128, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 32000, !eventID.isEmpty, eventID.utf8.count <= 128 else { return failure(id, -32602, "Require alias, nonempty text (max 32000 UTF-8 bytes), event_id (max 128 bytes); no extra arguments") }
-     let event = try signed(alias: alias, type: name == "workdesk_progress" ? "progress" : "task.create", text: text, eventID: eventID)
+     let creating = name == "workdesk_project_create"
+     let textField = creating ? "title" : "text"
+     guard Set(arguments.keys) == Set(["alias", textField, "event_id"]), let alias = arguments["alias"] as? String, let text = arguments[textField] as? String, let eventID = arguments["event_id"] as? String,
+           !alias.isEmpty, alias == alias.trimmingCharacters(in: .whitespacesAndNewlines), alias.utf8.count <= 128, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 32000, !eventID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, eventID.utf8.count <= 128 else { return failure(id, -32602, "Require alias (max 128 UTF-8 bytes, no surrounding whitespace), nonempty \(textField) (max 32000 UTF-8 bytes), stable event_id (max 128 bytes); no extra arguments") }
+     let event = try signed(alias: alias, type: creating ? "project.create" : name == "workdesk_progress" ? "progress" : "task.create", text: text, eventID: eventID)
      let receipt = try await store.receive(event)
      content = try JSONEncoder().encode(receipt)
      // Receipt notification refreshes the normal project view even when no inbox drainer is running.
@@ -128,6 +165,7 @@ public final class MCPServer {
  public static var tools: [[String: Any]] {
   let schema: [String: Any] = ["type": "object", "properties": ["alias": ["type": "string", "description": "workdesk_projects 返回的授权别名"], "text": ["type": "string", "minLength": 1, "maxLength": 32000], "event_id": ["type": "string", "minLength": 1, "maxLength": 128]], "required": ["alias", "text", "event_id"], "additionalProperties": false]
   return [
+   ["name": "workdesk_project_create", "description": "仅在本机首次授权允许创建新项目后创建项目并绑定未占用 alias；自动允许动态，待办权限继承本机选择。重试沿用相同 event_id、alias、title。", "inputSchema": ["type": "object", "properties": ["alias": ["type": "string", "minLength": 1, "maxLength": 128, "description": "新项目稳定别名，最多128 UTF-8字节，无首尾空白，不可覆盖已有绑定"], "title": ["type": "string", "minLength": 1, "maxLength": 32000, "description": "非空项目标题，最多32000 UTF-8字节"], "event_id": ["type": "string", "minLength": 1, "maxLength": 128, "description": "稳定操作ID，重试保持不变，最多128 UTF-8字节"]], "required": ["alias", "title", "event_id"], "additionalProperties": false], "annotations": ["idempotentHint": true, "destructiveHint": false]],
    ["name": "workdesk_projects", "description": "只列出当前身份被本机授权的 MCP 项目", "inputSchema": ["type": "object", "properties": [:], "additionalProperties": false], "annotations": ["readOnlyHint": true]],
    ["name": "workdesk_progress", "description": "记录项目动态并返回真实回执；不改变任务状态", "inputSchema": schema, "annotations": ["idempotentHint": true, "destructiveHint": false]],
    ["name": "workdesk_task_create", "description": "仅在单独获得任务创建许可后新建待办；不能完成任务", "inputSchema": schema, "annotations": ["idempotentHint": true, "destructiveHint": false]]
