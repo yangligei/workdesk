@@ -32,6 +32,12 @@ import WorkdeskCore
     let store = try Store(root: root)
     try await store.bind(source: source, alias: alias, project: project)
     print("已绑定：\(source) / \(alias) → \(project)")
+   case "unbind":
+    let flags = try Self.flags(Array(args.dropFirst()))
+    guard let source = flags["source"], let alias = flags["alias"] else { throw StoreError.database("unbind --source NAME --alias ALIAS（仅本机显式撤销绑定）") }
+    let store = try Store(root: root)
+    try await store.unbind(source: source, alias: alias)
+    print("已撤销绑定：\(source) / \(alias)")
    case "report":
     let flags = try Self.flags(Array(args.dropFirst()))
     guard let source = flags["source"], let alias = flags["alias"], let text = flags["text"] else { throw StoreError.database("report --source NAME --alias ALIAS --text TEXT [--type progress] [--token-file PATH]") }
@@ -61,7 +67,7 @@ import WorkdeskCore
    }
   } catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(1) }
  }
- static let usage = "WorkdeskCLI mcp --source NAME --token-file PATH [--data-dir PATH] | enroll --name NAME --token-file PATH [--project ID --alias ALIAS] | grant-create --name NAME --allow yes|no | bind --source NAME --alias ALIAS --project ID | report --source NAME --alias ALIAS --text TEXT --token-file PATH | submit SIGNED.json | receipt FILE.json | projects | drain"
+ static let usage = "WorkdeskCLI mcp --source NAME --token-file PATH [--data-dir PATH] | enroll --name NAME --token-file PATH [--project ID --alias ALIAS] | grant-create --name NAME --allow yes|no | bind --source NAME --alias ALIAS --project ID | unbind --source NAME --alias ALIAS | report --source NAME --alias ALIAS --text TEXT --token-file PATH | submit SIGNED.json | receipt FILE.json | projects | drain"
  static func flags(_ args: [String]) throws -> [String: String] {
   var result: [String: String] = [:]; var index = 0
   while index < args.count {
