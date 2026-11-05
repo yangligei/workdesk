@@ -1,5 +1,8 @@
 # 原生 MVP 验证
 
+> 版本注记（2026-11-05 文档同步）：下文保留当时实现与验证事实，不是当前操作指南。当前已提供持久化首次授权、四工具 MCP 项目创建及会议 AI 审核；手动新增入口已移除，项目与任务状态独立。请按[用户指南](user-guide.md)及[接入指南](agent-integration-guide.md)操作。本次仅校验文档，未重跑下列历史构建或客户端测试。
+
+
 环境：Apple Silicon，macOS 27.0.1，Apple Swift 5.10，Command Line Tools。
 
 - `swift run CoreChecks` 与 Release `CoreChecks` 均通过：空名称拒绝、参数绑定（含单引号名称）、持久化 CRUD、过期版本拒绝且不覆盖正式状态、级联删除、外键约束。
