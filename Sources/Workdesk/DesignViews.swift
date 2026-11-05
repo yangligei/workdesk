@@ -22,11 +22,12 @@ struct DeskButton: ButtonStyle {
 }
 enum StatusAppearance {
  static func symbol(_ value: String) -> String {
-  switch value { case "进行中": return "◐"; case "阻塞": return "!"; case "完成", "已完成": return "✓"; default: return "○" }
+  switch value { case "进行中": return "◐"; case "等待汇报/反馈": return "◷"; case "阻塞": return "!"; case "完成", "已完成": return "✓"; default: return "○" }
  }
  static func foreground(_ value: String) -> Color {
   switch value {
   case "进行中": return Color(red: 0.14, green: 0.36, blue: 0.56)
+  case "等待汇报/反馈": return Color(red: 0.43, green: 0.35, blue: 0.55)
   case "阻塞": return Color(red: 0.62, green: 0.25, blue: 0.15)
   case "完成", "已完成": return Desk.green
   default: return Color(red: 0.32, green: 0.36, blue: 0.39)
@@ -35,6 +36,7 @@ enum StatusAppearance {
  static func background(_ value: String) -> Color {
   switch value {
   case "进行中": return Color(red: 0.91, green: 0.95, blue: 0.98)
+  case "等待汇报/反馈": return Color(red: 0.95, green: 0.93, blue: 0.97)
   case "阻塞": return Color(red: 0.99, green: 0.93, blue: 0.90)
   case "完成", "已完成": return Color(red: 0.91, green: 0.95, blue: 0.92)
   default: return Color(red: 0.94, green: 0.945, blue: 0.95)
@@ -49,7 +51,8 @@ func projectStatus(_ tasks: [WorkTask]) -> String {
  if tasks.isEmpty { return "暂无任务" }
  if tasks.contains(where: { $0.status == "阻塞" }) { return "阻塞" }
  if tasks.allSatisfy({ $0.status == "完成" }) { return "已完成" }
- return tasks.contains(where: { $0.status == "进行中" }) ? "进行中" : "待办"
+ if tasks.contains(where: { $0.status == "进行中" }) { return "进行中" }
+ return tasks.contains(where: { $0.status == "等待汇报/反馈" }) ? "等待汇报/反馈" : "待办"
 }
 struct ProjectOverview: View {
  @ObservedObject var model: Model
@@ -236,7 +239,7 @@ struct InlineStatus: View {
  let choose: (String) -> Void
  var body: some View {
   StatusMenuButton(value: value, label: label, choose: choose)
-   .frame(width: 104, height: 48)
+   .frame(width: 152, height: 48)
 
  }
 }

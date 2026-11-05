@@ -15,10 +15,10 @@ output = Path(sys.argv[1]).resolve()
 program = r'''
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
-let states = ["待办", "进行中", "阻塞", "完成"]
-let content = VStack(spacing: 16) { ForEach(states, id: \.self) { value in InlineStatus(value: value, label: value) { _ in } } }.padding(24).frame(width: 220, height: 304).background(Color.white)
+let states = ["待办", "进行中", "等待汇报/反馈", "阻塞", "完成"]
+let content = VStack(spacing: 16) { ForEach(states, id: \.self) { value in InlineStatus(value: value, label: value) { _ in } } }.padding(24).frame(width: 220, height: 368).background(Color.white)
 let host = NSHostingView(rootView: content)
-let window = NSWindow(contentRect: NSRect(x: 0,y: 0,width: 220,height: 304), styleMask: [.titled], backing: .buffered, defer: false)
+let window = NSWindow(contentRect: NSRect(x: 0,y: 0,width: 220,height: 368), styleMask: [.titled], backing: .buffered, defer: false)
 window.contentView = host
 window.makeKeyAndOrderFront(nil)
 app.activate(ignoringOtherApps: true)
@@ -37,9 +37,11 @@ func pixel(_ point: NSPoint) -> NSColor {
 }
 func buttons(_ view: NSView) -> [StatusChoiceButton] { (view as? StatusChoiceButton).map { [$0] } ?? view.subviews.flatMap { buttons($0) } }
 let controls = buttons(host).sorted { $0.convert(.zero, to: host).y < $1.convert(.zero, to: host).y }
-precondition(controls.count == 4)
+precondition(controls.count == 5)
 for button in controls {
- precondition(button.bounds.size == NSSize(width: 104, height: 48))
+ precondition(button.bounds.size == NSSize(width: 152, height: 48))
+ let labelWidth = (StatusAppearance.symbol(button.value) + " " + button.value).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]).width
+ precondition(11 + labelWidth < button.bounds.width - 28, "label overlaps arrow")
  let point = button.convert(NSPoint(x: 8, y: 24), to: host)
  let actual = pixel(point)
  let expected = NSColor(StatusAppearance.background(button.value)).usingColorSpace(.sRGB)!
@@ -49,7 +51,7 @@ for button in controls {
 // that bounded conversion while still rejecting black or another state's ink.
  let ink = NSColor(StatusAppearance.foreground(button.value)).usingColorSpace(.sRGB)!
  var inkPixels = 0
- for y in 12..<36 { for x in 15..<100 {
+ for y in 12..<36 { for x in 15..<148 {
   let p = button.convert(NSPoint(x: x, y: y), to: host)
   let c = pixel(p)
   if abs(c.redComponent - ink.redComponent) < 0.08 && abs(c.greenComponent - ink.greenComponent) < 0.08 && abs(c.blueComponent - ink.blueComponent) < 0.08 { inkPixels += 1 }
@@ -62,13 +64,13 @@ let observer = MenuObserver()
 // Observe the real menu produced by the production action without replacing it.
 var selected = 0
 let button = controls[0]
-button.choose = { value in precondition(value == "进行中"); selected += 1 }
+button.choose = { value in precondition(value == "等待汇报/反馈"); selected += 1 }
 let notification = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { note in
  guard let menu = note.object as? NSMenu else { return }
  observer.opened += 1
- DispatchQueue.main.async { menu.performActionForItem(at: 1); menu.cancelTracking() }
+ DispatchQueue.main.async { menu.performActionForItem(at: 2); menu.cancelTracking() }
 }
-for point in [NSPoint(x: 2, y: 24), NSPoint(x: 40, y: 24), NSPoint(x: 102, y: 24), NSPoint(x: 66, y: 2), NSPoint(x: 66, y: 46)] {
+for point in [NSPoint(x: 2, y: 24), NSPoint(x: 40, y: 24), NSPoint(x: 150, y: 24), NSPoint(x: 66, y: 2), NSPoint(x: 66, y: 46)] {
  let inHost = button.convert(point, to: host)
  let hit = host.hitTest(host.convert(inHost, to: host.superview))
  precondition(hit === button, "entire rectangle must hit button: \(point), got \(String(describing: hit)), expected \(button)")

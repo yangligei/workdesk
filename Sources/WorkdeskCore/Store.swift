@@ -115,7 +115,7 @@ public actor Store {
   guard sqlite3_changes(db) == 1 else { throw StoreError.conflict }
  }
  public func updateProjectStatus(_ id: String, status: String, expected: Int) throws {
-  guard ["待办", "进行中", "阻塞", "完成"].contains(status) else { throw StoreError.database("无效状态") }
+  guard ["待办", "进行中", "等待汇报/反馈", "阻塞", "完成"].contains(status) else { throw StoreError.database("无效状态") }
   _ = try query("UPDATE projects SET status=?,version=version+1 WHERE id=? AND version=?", [status, id, String(expected)])
   guard sqlite3_changes(db) == 1 else { throw StoreError.conflict }
  }
@@ -136,7 +136,7 @@ public actor Store {
   _ = try query("INSERT INTO tasks(id,project_id,title) VALUES(?,?,?)", [item.id, project, item.title]); return item
  }
  public func updateTask(_ id: String, title text: String, status: String, expected: Int) throws {
-  guard ["待办", "进行中", "阻塞", "完成"].contains(status) else { throw StoreError.database("无效状态") }
+  guard ["待办", "进行中", "等待汇报/反馈", "阻塞", "完成"].contains(status) else { throw StoreError.database("无效状态") }
   let now = String(Date().timeIntervalSince1970)
   // 只在进入／离开“完成”的转换上写 completed_at，其余编辑保持原时间。
   _ = try query("""

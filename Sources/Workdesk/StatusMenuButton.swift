@@ -20,7 +20,7 @@ struct StatusMenuButton: NSViewRepresentable {
 final class StatusChoiceButton: NSButton {
  var value = "待办"
  var choose: (String) -> Void = { _ in }
- override var intrinsicContentSize: NSSize { NSSize(width: 104, height: 48) }
+ override var intrinsicContentSize: NSSize { NSSize(width: 152, height: 48) }
  override init(frame: NSRect) {
   super.init(frame: frame)
   isBordered = false
@@ -58,7 +58,7 @@ final class StatusChoiceButton: NSButton {
  }
  @objc func openChoices() {
   let menu = NSMenu()
-  for status in ["待办", "进行中", "阻塞", "完成"] {
+  for status in ["待办", "进行中", "等待汇报/反馈", "阻塞", "完成"] {
    let item = NSMenuItem(title: status, action: #selector(selectChoice(_:)), keyEquivalent: "")
    item.target = self
    item.state = status == value ? .on : .off

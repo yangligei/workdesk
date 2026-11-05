@@ -202,6 +202,20 @@ func require(_ value: Bool, _ message: String) throws {
   try await archiveStore.deleteTask(toRestore.id)
   try require(try await archiveStore.archivedTasks(archiveProject.id).count == 1, "删除归档任务失败")
 
+  // 等待状态：持久化、版本冲突、完成时间清理与归档排除。
+  let waiting = try await archiveStore.createTask(archiveProject.id, title: "等待反馈样例")
+  try await archiveStore.updateTask(waiting.id, title: waiting.title, status: "完成", expected: 1)
+  try await archiveStore.updateTask(waiting.id, title: waiting.title, status: "等待汇报/反馈", expected: 2)
+  try await archiveStore.updateProjectStatus(archiveProject.id, status: "等待汇报/反馈", expected: 1)
+  let waitingReopened = try Store(root: archiveRoot)
+  let persistedWaiting = try await waitingReopened.tasks(archiveProject.id).first { $0.id == waiting.id }!
+  try require(persistedWaiting.status == "等待汇报/反馈" && persistedWaiting.completedAt == nil && persistedWaiting.version == 3, "等待状态或完成时间清理未持久化")
+  try require(try await waitingReopened.projects().first { $0.id == archiveProject.id }!.status == "等待汇报/反馈", "项目等待状态未持久化")
+  do { try await archiveStore.updateTask(waiting.id, title: waiting.title, status: "待办", expected: 2); throw NSError(domain: "expected conflict", code: 1) } catch StoreError.conflict { }
+  do { try await archiveStore.updateProjectStatus(archiveProject.id, status: "待办", expected: 1); throw NSError(domain: "expected conflict", code: 1) } catch StoreError.conflict { }
+  try require(try await archiveStore.sweepArchive(now: Date().addingTimeInterval(72 * 3600)) == 0, "等待状态误归档")
+  try require(try await archiveStore.tasks(archiveProject.id).contains { $0.id == waiting.id }, "等待任务从主列表消失")
+
   // 点击接入引擎只使用隔离目录，检查真实签名回执、撤销与凭据复用。
   let setupRoot = root.appendingPathComponent("setup")
   let setupStore = try Store(root: setupRoot)

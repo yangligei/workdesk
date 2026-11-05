@@ -16,20 +16,26 @@ events = (repo / 'Sources/WorkdeskCore/Events.swift').read_text()
 types = store[store.index('public struct Project:'):store.index('public enum StoreError:')]
 types += events[events.index('public struct AuditEntry:'):events.index('public extension Store {')]
 fixture = r'''
+final class ArchiveWindow {
+ static let shared = ArchiveWindow()
+ func show(_ model: Model) { fatalError("read-only render") }
+}
 final class FixtureStore {
  func updateProjectStatus(_ id: String, status: String, expected: Int) async throws { fatalError("read-only render") }
 }
 final class Model: ObservableObject {
  @Published var projects = [Project(id: "fixture", title: "原生界面排版验收", stage: "视觉与交互验证", status: "进行中"), Project(id: "long", title: "长项目名称换行与状态列验证示例"), Project(id: "other", title: "隔离样例")]
  @Published var selection: String? = "fixture"
+ @Published var archivedTasks: [ArchivedTask] = []
  @Published var tasks: [WorkTask] = []
  @Published var error: String?
- @Published var projectTasks = ["fixture": [WorkTask(id: "1", title: "核对标题、正文与状态的字号层级", status: "待办", version: 1), WorkTask(id: "2", title: "压缩任务行间距，保留完整点击区域", status: "进行中", version: 1), WorkTask(id: "3", title: "长任务标题应自然换行：检查右侧状态列独立对齐，正文不会重叠或被截断", status: "阻塞", version: 1), WorkTask(id: "4", title: "完成原生渲染检查", status: "完成", version: 1)]]
+ @Published var projectTasks = ["fixture": [WorkTask(id: "1", title: "核对标题、正文与状态的字号层级", status: "待办", version: 1), WorkTask(id: "2", title: "压缩任务行间距，保留完整点击区域", status: "进行中", version: 1), WorkTask(id: "3", title: "长任务标题应自然换行：检查右侧状态列独立对齐，正文不会重叠或被截断", status: "等待汇报/反馈", version: 1), WorkTask(id: "4", title: "完成原生渲染检查", status: "完成", version: 1)]]
  @Published var projectProgress = ["fixture": [AuditEntry(id: "1", source: "fixture-agent", project: "fixture", occurred: "11月4日 16:00", received: "", type: "progress", text: "已调整整体字号与留白，正在核对原生界面。", outcome: "accepted"), AuditEntry(id: "2", source: "fixture-agent", project: "fixture", occurred: "11月4日 15:00", received: "", type: "progress", text: "更早的隔离样例进展", outcome: "accepted")]]
  @Published var bindings: [SourceBinding] = []
  var store: FixtureStore? = nil
  func perform(_ action: @escaping () async throws -> Void) { fatalError("read-only render") }
  func reload() async { fatalError("read-only render") }
+ func deleteTask(_ task: WorkTask) { fatalError("read-only render") }
  func update(_ task: WorkTask, status: String) { fatalError("read-only render") }
 }
 let app = NSApplication.shared
@@ -50,12 +56,12 @@ func buttons(_ view: NSView) -> [StatusChoiceButton] { (view as? StatusChoiceBut
 let controls = buttons(host)
 precondition(controls.count == 5)
 let frames = controls.map { $0.convert($0.bounds, to: host) }
-for frame in frames { precondition(frame.width == 104 && frame.height == 48 && frame.minX >= 0 && frame.maxX <= 520) }
-precondition(Set(frames.map { $0.minX }).count == 1, "status column must align")
+for frame in frames { precondition(frame.width == 152 && frame.height == 48 && frame.minX >= 0 && frame.maxX <= 520) }
+precondition(Set(controls.filter { $0.accessibilityLabel() != "项目状态" }.map { $0.convert($0.bounds, to: host).minX }).count == 1, "task status column must align")
 let image = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
 host.cacheDisplay(in: host.bounds, to: image)
 try! image.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
-print("PASS native 520x720pt FocusPanel, five 104x48pt controls, aligned status column; memory-only fixture")
+print("PASS native 520x720pt FocusPanel, five 152x48pt controls, aligned status column; memory-only fixture")
 print("Control frames:", frames)
 '''
 with tempfile.TemporaryDirectory(prefix='focus-render-', dir=os.environ['TMPDIR']) as temporary:
