@@ -81,6 +81,17 @@ func require(_ value: Bool, _ message: String) throws {
   _ = try await store.receive(confirmation)
   let meetingTasks = try await store.tasks(project.id)
   try require(meetingTasks.count == 1 && meetingTasks[0].title == "整理说明", "会议确认不幂等")
+  // 删除已存会议：原文与草稿一并清理，已入库任务保留；重复删除报缺失。
+  let removable = try await store.saveMeetingSource(project: project.id, text: "待删会议原文", originalDate: "2026-11-05")
+  let removableDrafts = try await store.meetingDrafts(removable.id)
+  let beforeDelete = try await store.allMeetings()
+  try require(removableDrafts.isEmpty && beforeDelete.contains { $0.id == removable.id }, "删除前会议未保存")
+  try await store.deleteMeeting(removable.id)
+  let afterDelete = try await store.allMeetings()
+  try require(afterDelete.contains { $0.id == removable.id } == false, "已存会议未删除")
+  let remainingTasks = try await store.tasks(project.id)
+  try require(remainingTasks.count == 1, "删除会议误删了已入库任务")
+  do { try await store.deleteMeeting(removable.id); throw NSError(domain: "expected missing", code: 1) } catch StoreError.missing { }
   try await store.deleteTask(meetingTasks[0].id)
   let task = try await store.createTask(project.id, title: "原始任务")
   try await store.updateTask(task.id, title: "更新任务", status: "完成", expected: 1)

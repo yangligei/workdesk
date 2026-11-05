@@ -60,4 +60,17 @@ public extension Store {
   try meetingSchema()
   return try query("SELECT id,title,evidence,line,task FROM drafts WHERE meeting=? ORDER BY line", [meeting]).map { MeetingDraft(id: $0[0], title: $0[1], evidence: $0[2], line: Int($0[3])!, taskID: $0[4]) }
  }
+ /// Deletes the meeting source together with its drafts and reviews; accepted project tasks are untouched.
+ func deleteMeeting(_ id: String) throws {
+  try meetingSchema()
+  _ = try query("CREATE TABLE IF NOT EXISTS meeting_reviews(id TEXT PRIMARY KEY,meeting TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,body TEXT NOT NULL)")
+  guard try !query("SELECT id FROM meetings WHERE id=?", [id]).isEmpty else { throw StoreError.missing }
+  _ = try query("BEGIN IMMEDIATE")
+  do {
+   _ = try query("DELETE FROM drafts WHERE meeting=?", [id])
+   _ = try query("DELETE FROM meeting_reviews WHERE meeting=?", [id])
+   _ = try query("DELETE FROM meetings WHERE id=?", [id])
+   _ = try query("COMMIT")
+  } catch { _ = try? query("ROLLBACK"); throw error }
+ }
 }

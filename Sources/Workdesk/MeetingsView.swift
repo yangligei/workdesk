@@ -124,6 +124,21 @@ import WorkdeskCore
   saving?.cancel()
   model.perform { try await self.persist() }
  }
+ /// Deletes a saved meeting (原文、草稿与识别记录)；已确认入库的项目任务不受影响。
+ func delete(_ meeting: Meeting) {
+  if analyzing { cancel() }
+  saving?.cancel()
+  operation = Task {
+   busy = true; defer { busy = false }
+   do {
+    guard let store = model.store else { throw StoreError.missing }
+    try await store.deleteMeeting(meeting.id)
+    if current?.id == meeting.id { current = nil; text = ""; reviews = []; projectID = nil }
+    saved = try await store.allMeetings()
+    message = "已删除该会议原文与草稿；已入库的项目事项不受影响"
+   } catch { message = error.localizedDescription }
+  }
+ }
 }
 
 private extension Optional where Wrapped == Meeting {
@@ -137,6 +152,7 @@ struct MeetingsView: View {
  @ObservedObject var model: Model
  @StateObject var editor: MeetingEditor
  @State private var disclosure = false
+ @State private var pendingDelete: Meeting?
  init(model: Model) {
   self.model = model; _editor = StateObject(wrappedValue: MeetingEditor(model: model))
  }
@@ -150,8 +166,12 @@ struct MeetingsView: View {
    HStack(spacing: 10) {
     Menu("打开已存会议") {
      ForEach(editor.saved) { meeting in
-      Button((meeting.originalDate.isEmpty ? "日期未知" : meeting.originalDate) + " · " + String(meeting.text.prefix(28))) { editor.open(meeting) }
+      Menu((meeting.originalDate.isEmpty ? "日期未知" : meeting.originalDate) + " · " + String(meeting.text.prefix(28)).replacingOccurrences(of: "\n", with: " ")) {
+       Button("打开") { editor.open(meeting) }
+       Button("删除…", role: .destructive) { pendingDelete = meeting }
+      }
      }
+     if editor.saved.isEmpty { Button("暂无已存会议") {}.disabled(true) }
     }.menuStyle(.borderlessButton).fixedSize().padding(10).background(Desk.wash, in: RoundedRectangle(cornerRadius: 6))
     Button("新会议") { editor.open(nil) }.buttonStyle(DeskButton())
     Spacer(minLength: 0)
@@ -188,6 +208,15 @@ struct MeetingsView: View {
     Button("授权并识别") { editor.analyze() }
    } message: {
     Text("会议全文、当前已有项目和任务名称将发送给 Hermes 已配置的模型。使用本机 hermes-agent 单次进程，关闭全部工具；本机进程参数可能包含会议文字。仅生成本地审核草稿，不会自动创建项目或事项。确认所选条目时，才以现有身份签名提交，并遵守连接中心的项目与创建权限。")
+   }
+   .confirmationDialog("删除这条已存会议？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
+    Button("删除会议原文与草稿", role: .destructive) {
+     if let meeting = pendingDelete { editor.delete(meeting) }
+     pendingDelete = nil
+    }
+    Button("取消", role: .cancel) { pendingDelete = nil }
+   } message: {
+    Text("将删除该会议的原文、待办草稿与识别记录；已确认写入项目的事项不受影响。")
    }
  }
  private var sourcePanel: some View {
