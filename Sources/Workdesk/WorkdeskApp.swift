@@ -25,6 +25,8 @@ import WorkdeskCore
  private var inbox: EventInbox?
  private var watcher: InboxWatcher?
  private var receiptWatcher: InboxWatcher?
+ private var archiveTimer: Timer?
+ private var wakeObserver: NSObjectProtocol?
  init() {
   do {
    let root = ProcessInfo.processInfo.environment["WORKDESK_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Workdesk")
@@ -39,8 +41,31 @@ import WorkdeskCore
     guard let model = self else { return }
     Task { @MainActor in await model.reload() }
    }
+   wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+    guard let model = self else { return }
+    Task { @MainActor in await model.reload() }
+   }
    perform { await self.reload() }
   } catch { self.error = error.localizedDescription }
+ }
+ deinit {
+  archiveTimer?.invalidate()
+  if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+ }
+ private func scheduleArchive() {
+  archiveTimer?.invalidate(); archiveTimer = nil
+  guard autoArchive else { return }
+  let active: [WorkTask] = projectTasks.values.flatMap { $0 }
+  let deadlines: [Date] = active.filter { $0.status == "完成" }.compactMap { task in
+   task.completedAt?.addingTimeInterval(43200)
+  }
+  guard let deadline = deadlines.min() else { return }
+  let timer = Timer(timeInterval: max(0.05, deadline.timeIntervalSinceNow), repeats: false) { [weak self] _ in
+   guard let model = self else { return }
+   Task { @MainActor in await model.reload() }
+  }
+  archiveTimer = timer
+  RunLoop.main.add(timer, forMode: .common)
  }
  func perform(_ action: @escaping () async throws -> Void) {
   Task { do { try await action() } catch { self.error = error.localizedDescription } }
@@ -59,6 +84,7 @@ import WorkdeskCore
    projectTasks = grouped
    archivedTasks = try await store.archivedTasks()
    autoArchive = try await store.autoArchiveEnabled()
+   scheduleArchive()
    tasks = selection.flatMap { grouped[$0] } ?? []
    audit = try await store.audit(); bindings = try await store.bindings()
    meetings = try await selection.mapAsyncMeetings(store)

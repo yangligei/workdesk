@@ -216,6 +216,7 @@ func require(_ value: Bool, _ message: String) throws {
   try require(try await archiveStore.sweepArchive(now: Date().addingTimeInterval(72 * 3600)) == 0, "等待状态误归档")
   try require(try await archiveStore.tasks(archiveProject.id).contains { $0.id == waiting.id }, "等待任务从主列表消失")
 
+  try await checkLegacyMigration(root: root.appendingPathComponent("legacy-migration"))
   // 点击接入引擎只使用隔离目录，检查真实签名回执、撤销与凭据复用。
   let setupRoot = root.appendingPathComponent("setup")
   let setupStore = try Store(root: setupRoot)
