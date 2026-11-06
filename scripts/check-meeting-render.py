@@ -24,7 +24,7 @@ import WorkdeskCore
     let project = try await store.createProject("演示验证")
     let other = try await store.createProject("公众号运营")
     _ = try await store.registerSource("render-fixture", project: project.id, alias: "demo", tokenFile: model.connectionCredentials.appendingPathComponent("render-fixture.key"))
-    let text = "11月4日 · 工作沟通（隔离示例）\n\n周总：演示验证这个 demo 还要再跑一遍，看看上次的问题有没有解决。\n\n我：好的，我再验证一下，把结果整理出来。\n\n张航：公众号我还在推进。\n\n我：微信推文的流程也得梳理一下，后续运营安排再找时间讨论。"
+    let text = "11月4日 · 工作沟通（隔离示例）\n\n李经理：演示验证这个 demo 还要再跑一遍，看看上次的问题有没有解决。\n\n我：好的，我再验证一下，把结果整理出来。\n\n小林：公众号我还在推进。\n\n我：微信推文的流程也得梳理一下，后续运营安排再找时间讨论。"
     let meeting = try await store.saveMeetingSource(project: project.id, text: text, originalDate: "2026-11-04")
     let fixture: [[String:String]] = [
      ["type":"task","text":"把 demo 再跑一遍，并整理验证结果","projectID":project.id,"evidence":"我再验证一下，把结果整理出来。"],
