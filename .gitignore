@@ -10,6 +10,8 @@ xcuserdata/
 .venv/
 venv/
 __pycache__/
+# Local validation evidence
+artifacts/
 # Private runtime data
 .env
 .env.*
